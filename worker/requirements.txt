@@ -1,0 +1,37 @@
+# ============================================================
+# track-mcp Celery Worker dependencies
+# ============================================================
+
+# Task queue
+celery[redis]==5.4.0
+redis==5.2.1
+
+# Database (workers write analysis results back to PostgreSQL)
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+
+# Object storage (workers read raw files from MinIO)
+minio==7.2.11
+
+# AI / LLM (workers invoke Anthropic for coaching insights)
+anthropic==0.40.0
+
+# Data validation / serialization
+pydantic==2.10.3
+orjson==3.10.12
+
+# Logging
+structlog==24.4.0
+
+# HTTP client
+httpx==0.28.1
+
+# Utilities
+python-dotenv==1.0.1
+
+# Flower (Celery monitoring — included so flower runs from the same image)
+flower==2.0.1
+
+# Numerical analysis
+numpy>=1.26.0

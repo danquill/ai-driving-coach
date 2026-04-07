@@ -1,0 +1,236 @@
+secrets:
+  db_password:
+    file: .secrets/db_password
+  minio_root_password:
+    file: .secrets/minio_root_password
+  jwt_secret:
+    file: .secrets/jwt_secret
+
+x-common-env: &common-env
+  DATABASE_URL: postgresql+asyncpg://track:DOCKER-SECRET@db:5432/trackdb
+  SYNC_DATABASE_URL: postgresql://track:DOCKER-SECRET@db:5432/trackdb
+  REDIS_URL: redis://redis:6379/0
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-trackminio}
+  MINIO_SECURE: "false"
+
+services:
+  # ---------------------------------------------------------------------------
+  # TimescaleDB (includes PostGIS via timescaledb-ha image)
+  # ---------------------------------------------------------------------------
+  db:
+    image: timescale/timescaledb-ha:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: track
+      POSTGRES_DB: trackdb
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - timescale_data:/home/postgres/pgdata/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U track -d trackdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Redis (Celery broker + result backend)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # MinIO (S3-compatible object storage)
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-trackminio}
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
+    secrets:
+      - minio_root_password
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Storage init — creates MinIO buckets, then exits
+  # ---------------------------------------------------------------------------
+  storage-init:
+    image: minio/mc:latest
+    restart: on-failure
+    depends_on:
+      minio:
+        condition: service_healthy
+    secrets:
+      - minio_root_password
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-trackminio}
+    volumes:
+      - ./storage-init/init.sh:/init.sh:ro
+    entrypoint: ["/bin/sh", "/init.sh"]
+
+  # ---------------------------------------------------------------------------
+  # Alembic migrations — runs `alembic upgrade head`, then exits
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: on-failure
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      <<: *common-env
+      DB_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # FastAPI application
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+    environment:
+      <<: *common-env
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_root_password
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    secrets:
+      - db_password
+      - minio_root_password
+      - jwt_secret
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Celery worker
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    restart: unless-stopped
+    command: ["celery", "-A", "worker.app.celery_app", "worker", "--loglevel=info", "--concurrency=2", "-Q", "default,parse,analysis"]
+    environment:
+      <<: *common-env
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_root_password
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    secrets:
+      - db_password
+      - minio_root_password
+      - jwt_secret
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # ---------------------------------------------------------------------------
+  # Flower (Celery monitoring UI)
+  # ---------------------------------------------------------------------------
+  flower:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    restart: unless-stopped
+    command: ["celery", "-A", "worker.app.celery_app", "flower", "--port=5555", "--url_prefix=flower"]
+    environment:
+      <<: *common-env
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5555:5555"
+
+  # ---------------------------------------------------------------------------
+  # Frontend (React/Vite dev server)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=/api/v1
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Nginx reverse proxy
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:1.25-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - flower
+      - frontend
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+
+volumes:
+  timescale_data:
+  redis_data:
+  minio_data:

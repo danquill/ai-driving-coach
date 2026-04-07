@@ -1,0 +1,44 @@
+# ============================================================
+# track-mcp API dependencies
+# ============================================================
+
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+alembic==1.14.0
+
+# Data validation
+pydantic[email]==2.10.3
+pydantic-settings==2.7.0
+
+# Authentication
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.20
+
+# Task queue
+celery[redis]==5.4.0
+redis==5.2.1
+
+# Object storage
+minio==7.2.11
+
+# AI / LLM
+anthropic==0.40.0
+
+# Logging
+structlog==24.4.0
+
+# HTTP client (for internal service calls)
+httpx==0.28.1
+
+# Utilities
+python-dotenv==1.0.1
+orjson==3.10.12
+numpy>=1.26.0
