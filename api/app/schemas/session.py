@@ -44,6 +44,7 @@ class SessionResponse(BaseModel):
     session_type: Optional[str] = None
     status: str
     created_at: datetime
+    event_id: Optional[uuid.UUID] = None
     best_lap_time_ms: Optional[int] = None
     circuit_name: Optional[str] = None
 

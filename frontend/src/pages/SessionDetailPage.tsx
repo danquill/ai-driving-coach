@@ -19,6 +19,8 @@ import { SpeedTraceChart } from '../components/charts/SpeedTraceChart'
 import { ThrottleBrakeChart } from '../components/charts/ThrottleBrakeChart'
 import { TractionCircleChart } from '../components/charts/TractionCircleChart'
 import { SectorDeltaChart } from '../components/charts/SectorDeltaChart'
+import { GearRpmChart } from '../components/charts/GearRpmChart'
+import { SteeringChart } from '../components/charts/SteeringChart'
 import { TrackMap } from '../components/map/TrackMap'
 import { InsightMiniMap } from '../components/map/InsightMiniMap'
 import { updateSession } from '../api/sessions'
@@ -334,14 +336,16 @@ function LapsTab({ sessionId }: { sessionId: string }) {
 
 // ─── Analysis Tab ─────────────────────────────────────────────────────────────
 
-const ALL_CHANNELS = [
-  { key: 'speed_kph', label: 'Speed' },
-  { key: 'throttle_pct', label: 'Throttle' },
-  { key: 'brake_pct', label: 'Brake' },
-  { key: 'steering_deg', label: 'Steering' },
-  { key: 'lat_g', label: 'Lat G' },
-  { key: 'lon_g', label: 'Lon G' },
-]
+const CHART_PANELS = [
+  { key: 'speed', label: 'Speed' },
+  { key: 'throttle', label: 'Throttle / Brake' },
+  { key: 'gear', label: 'Gear / RPM' },
+  { key: 'steering', label: 'Steering' },
+  { key: 'traction', label: 'Traction' },
+  { key: 'map', label: 'Map' },
+] as const
+
+type ChartPanelKey = typeof CHART_PANELS[number]['key']
 
 function AnalysisTab({ sessionId }: { sessionId: string }) {
   const { data: session } = useQuery({ queryKey: ['session', sessionId], queryFn: () => getSession(sessionId) })
@@ -357,9 +361,7 @@ function AnalysisTab({ sessionId }: { sessionId: string }) {
 
   const selectedLapNumbers = useStore((s) => s.selectedLapNumbers)
   const lapColorMap = useStore((s) => s.lapColorMap)
-  const selectedChannels = useStore((s) => s.selectedChannels)
   const toggleLap = useStore((s) => s.toggleLap)
-  const setChannels = useStore((s) => s.setChannels)
 
   const { data: overlay } = useTelemetryOverlay(sessionId)
 
@@ -377,14 +379,17 @@ function AnalysisTab({ sessionId }: { sessionId: string }) {
   }, [overlay, selectedLapNumbers])
 
   const [chartsExpanded, setChartsExpanded] = useState(false)
+  const [visibleCharts, setVisibleCharts] = useState<Set<ChartPanelKey>>(
+    new Set(CHART_PANELS.map((p) => p.key))
+  )
   const validLaps = (laps ?? []).filter((l) => l.is_valid)
 
-  function toggleChannel(ch: string) {
-    if (selectedChannels.includes(ch)) {
-      setChannels(selectedChannels.filter((c) => c !== ch))
-    } else {
-      setChannels([...selectedChannels, ch])
-    }
+  function toggleChart(key: ChartPanelKey) {
+    setVisibleCharts((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) { next.delete(key) } else { next.add(key) }
+      return next
+    })
   }
 
   return (
@@ -439,21 +444,21 @@ function AnalysisTab({ sessionId }: { sessionId: string }) {
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Toolbar */}
         <div className="flex items-center gap-2 px-3 py-2 border-b border-[#1e1e2e] flex-shrink-0">
-          {/* Channel toggles */}
+          {/* Chart visibility toggles */}
           <div className="flex items-center gap-1.5 flex-1 flex-wrap">
-            {ALL_CHANNELS.map((ch) => {
-              const active = selectedChannels.includes(ch.key)
+            {CHART_PANELS.map((panel) => {
+              const active = visibleCharts.has(panel.key)
               return (
                 <button
-                  key={ch.key}
-                  onClick={() => toggleChannel(ch.key)}
+                  key={panel.key}
+                  onClick={() => toggleChart(panel.key)}
                   className={`px-2.5 py-1 text-[11px] rounded border transition-all ${
                     active
                       ? 'bg-[#457b9d]/20 border-[#457b9d] text-[#457b9d]'
                       : 'bg-transparent border-[#1e1e2e] text-[#6b7280] hover:border-[#2e2e4e] hover:text-[#9ca3af]'
                   }`}
                 >
-                  {ch.label}
+                  {panel.label}
                 </button>
               )
             })}
@@ -510,34 +515,59 @@ function AnalysisTab({ sessionId }: { sessionId: string }) {
             </div>
           ) : (
             <>
-              <SpeedTraceChart
-                overlay={overlay}
-                selectedLaps={selectedLapNumbers}
-                lapColorMap={lapColorMap}
-              />
-              <ThrottleBrakeChart
-                overlay={overlay}
-                selectedLaps={selectedLapNumbers}
-                lapColorMap={lapColorMap}
-              />
-              <div className="flex gap-3 items-stretch">
-                <div className="flex-1 min-w-0">
-                  <TractionCircleChart
-                    overlay={overlay}
-                    selectedLaps={selectedLapNumbers}
-                    lapColorMap={lapColorMap}
-                  />
+              {visibleCharts.has('speed') && (
+                <SpeedTraceChart
+                  overlay={overlay}
+                  selectedLaps={selectedLapNumbers}
+                  lapColorMap={lapColorMap}
+                />
+              )}
+              {visibleCharts.has('throttle') && (
+                <ThrottleBrakeChart
+                  overlay={overlay}
+                  selectedLaps={selectedLapNumbers}
+                  lapColorMap={lapColorMap}
+                />
+              )}
+              {visibleCharts.has('gear') && (
+                <GearRpmChart
+                  overlay={overlay}
+                  selectedLaps={selectedLapNumbers}
+                  lapColorMap={lapColorMap}
+                />
+              )}
+              {visibleCharts.has('steering') && (
+                <SteeringChart
+                  overlay={overlay}
+                  selectedLaps={selectedLapNumbers}
+                  lapColorMap={lapColorMap}
+                />
+              )}
+              {(visibleCharts.has('traction') || visibleCharts.has('map')) && (
+                <div className="flex gap-3 items-stretch">
+                  {visibleCharts.has('traction') && (
+                    <div className={visibleCharts.has('map') ? 'flex-1 min-w-0' : 'w-1/2'}>
+                      <TractionCircleChart
+                        overlay={overlay}
+                        selectedLaps={selectedLapNumbers}
+                        lapColorMap={lapColorMap}
+                      />
+                    </div>
+                  )}
+                  {visibleCharts.has('map') && (
+                    <div className={visibleCharts.has('traction') ? 'flex-1 min-w-0' : 'w-full'} style={visibleCharts.has('traction') ? undefined : { height: '340px' }}>
+                      <TrackMap
+                        circuit={circuit ?? null}
+                        lapRows={mapLaps}
+                        selectedLaps={selectedLapNumbers}
+                        channels={mapChannels}
+                        lapColorMap={lapColorMap}
+                        colorMode="speed"
+                      />
+                    </div>
+                  )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <TrackMap
-                    circuit={circuit ?? null}
-                    lapRows={mapLaps}
-                    selectedLaps={selectedLapNumbers}
-                    channels={mapChannels}
-                    lapColorMap={lapColorMap}
-                  />
-                </div>
-              </div>
+              )}
             </>
           )}
         </div>{/* end overflow-y-auto charts scroll */}

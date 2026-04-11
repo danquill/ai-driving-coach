@@ -41,6 +41,7 @@ export interface Session {
   name?: string
   circuit_id?: string
   vehicle_id?: string
+  event_id?: string
   session_date?: string
   ambient_temp_c?: number
   notes?: string
@@ -49,6 +50,19 @@ export interface Session {
   created_at: string
   best_lap_time_ms?: number
   circuit_name?: string
+}
+
+// ─── Events ──────────────────────────────────────────────────────────────────
+
+export interface Event {
+  id: string
+  owner_id: string
+  name: string
+  event_date?: string
+  circuit_id?: string
+  circuit_name?: string
+  notes?: string
+  created_at: string
 }
 
 // ─── Files ───────────────────────────────────────────────────────────────────

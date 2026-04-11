@@ -19,6 +19,11 @@ export async function getSession(id: string): Promise<Session> {
   return response.data
 }
 
+export async function getDemoSession(): Promise<Session> {
+  const response = await client.get<Session>('/sessions/demo')
+  return response.data
+}
+
 export async function createSession(data: CreateSessionData): Promise<Session> {
   const response = await client.post<Session>('/sessions', data)
   return response.data

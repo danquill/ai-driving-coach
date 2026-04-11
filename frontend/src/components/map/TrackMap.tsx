@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
 import type { Circuit } from '../../types/api'
 import { useStore } from '../../store'
+import { speedToColor } from '../../utils/telemetry'
 
 interface TrackMapProps {
   circuit: Circuit | null
@@ -9,6 +10,7 @@ interface TrackMapProps {
   selectedLaps: number[]
   channels: string[]
   lapColorMap: Record<number, string>
+  colorMode?: 'lap' | 'speed'
 }
 
 function buildLineGeoJSON(rows: number[][], latIdx: number, lonIdx: number): GeoJSON.Feature {
@@ -22,7 +24,7 @@ function buildLineGeoJSON(rows: number[][], latIdx: number, lonIdx: number): Geo
   }
 }
 
-export function TrackMap({ circuit, lapRows, selectedLaps, channels, lapColorMap }: TrackMapProps) {
+export function TrackMap({ circuit, lapRows, selectedLaps, channels, lapColorMap, colorMode = 'lap' }: TrackMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const markersRef = useRef<Map<number, maplibregl.Marker>>(new Map())
@@ -32,9 +34,11 @@ export function TrackMap({ circuit, lapRows, selectedLaps, channels, lapColorMap
   const selectedLapsRef = useRef(selectedLaps)
   const lapRowsRef = useRef(lapRows)
   const channelsRef = useRef(channels)
+  const colorModeRef = useRef(colorMode)
   selectedLapsRef.current = selectedLaps
   lapRowsRef.current = lapRows
   channelsRef.current = channels
+  colorModeRef.current = colorMode
 
   const cursorDistanceM = useStore((s) => s.cursorDistanceM)
   const cursorDistanceMRef = useRef(cursorDistanceM)
@@ -49,8 +53,8 @@ export function TrackMap({ circuit, lapRows, selectedLaps, channels, lapColorMap
       return `${n}:${rows?.length ?? 0}`
     }).join(',')
     const colorKey = selectedLaps.map((n) => lapColorMap[n] ?? '').join(',')
-    return `${lapKeys}|${colorKey}|${channels.join(',')}|${circuit?.id ?? ''}`
-  }, [selectedLaps, lapRows, lapColorMap, channels, circuit?.id])
+    return `${lapKeys}|${colorKey}|${channels.join(',')}|${circuit?.id ?? ''}|${colorMode}`
+  }, [selectedLaps, lapRows, lapColorMap, channels, circuit?.id, colorMode])
 
   // ── Init map ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -113,6 +117,22 @@ export function TrackMap({ circuit, lapRows, selectedLaps, channels, lapColorMap
 
       const allCoords: [number, number][] = []
 
+      // Pre-compute global speed range for speed-color mode
+      const speedIdx = chs.indexOf('speed_kph')
+      const useSpeedColor = colorModeRef.current === 'speed' && speedIdx !== -1
+      let globalMinSpeed = 0
+      let globalMaxSpeed = 200
+      if (useSpeedColor) {
+        let lo = Infinity, hi = -Infinity
+        for (const lapNum of laps) {
+          for (const row of rows[lapNum] ?? []) {
+            const s = row[speedIdx]
+            if (s != null) { if (s < lo) lo = s; if (s > hi) hi = s }
+          }
+        }
+        if (lo !== Infinity) { globalMinSpeed = lo; globalMaxSpeed = hi }
+      }
+
       for (let i = 0; i < laps.length; i++) {
         const lapNum = laps[i]
         const lapData = rows[lapNum]
@@ -124,19 +144,51 @@ export function TrackMap({ circuit, lapRows, selectedLaps, channels, lapColorMap
         const lid = `trk-l-${lapNum}`
 
         try {
-          map.addSource(sid, { type: 'geojson', data: buildLineGeoJSON(lapData, latIdx, lonIdx) })
-          map.addLayer({
-            id: lid,
-            type: 'line',
-            source: sid,
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: {
-              'line-color': color,
-              'line-width': isCmp ? 2 : 3,
-              'line-opacity': isCmp ? 0.7 : 1,
-              ...(isCmp ? { 'line-dasharray': [4, 3] } : {}),
-            },
-          })
+          if (useSpeedColor) {
+            // Build speed-gradient stops (downsampled to ~500 points)
+            const step = Math.max(1, Math.floor(lapData.length / 500))
+            const stops: (number | string)[] = []
+            for (let j = 0; j < lapData.length - 1; j += step) {
+              const progress = j / (lapData.length - 1)
+              const [r, g, b] = speedToColor(lapData[j][speedIdx] ?? globalMinSpeed, globalMinSpeed, globalMaxSpeed)
+              stops.push(progress, `rgb(${r},${g},${b})`)
+            }
+            // Always include endpoint
+            const last = lapData[lapData.length - 1]
+            const [r, g, b] = speedToColor(last[speedIdx] ?? globalMinSpeed, globalMinSpeed, globalMaxSpeed)
+            stops.push(1.0, `rgb(${r},${g},${b})`)
+
+            map.addSource(sid, {
+              type: 'geojson',
+              lineMetrics: true,
+              data: buildLineGeoJSON(lapData, latIdx, lonIdx),
+            })
+            map.addLayer({
+              id: lid,
+              type: 'line',
+              source: sid,
+              layout: { 'line-join': 'round', 'line-cap': 'round' },
+              paint: {
+                'line-width': isCmp ? 2 : 3,
+                'line-opacity': isCmp ? 0.7 : 1,
+                'line-gradient': ['interpolate', ['linear'], ['line-progress'], ...stops] as maplibregl.ExpressionSpecification,
+              },
+            })
+          } else {
+            map.addSource(sid, { type: 'geojson', data: buildLineGeoJSON(lapData, latIdx, lonIdx) })
+            map.addLayer({
+              id: lid,
+              type: 'line',
+              source: sid,
+              layout: { 'line-join': 'round', 'line-cap': 'round' },
+              paint: {
+                'line-color': color,
+                'line-width': isCmp ? 2 : 3,
+                'line-opacity': isCmp ? 0.7 : 1,
+                ...(isCmp ? { 'line-dasharray': [4, 3] } : {}),
+              },
+            })
+          }
           prevLayerIdsRef.current.push(lid, sid)
         } catch {
           // Source/layer may already exist during rapid re-renders

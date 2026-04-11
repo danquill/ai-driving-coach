@@ -10,7 +10,7 @@ import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, DEMO_SESSION_ID
 from app.schemas.file import RawFileResponse, UploadResponse
 from app.schemas.session import CreateSessionRequest, SessionResponse, UpdateSessionRequest
 from app.services.storage import RAW_FILES_BUCKET, get_storage
@@ -93,6 +93,35 @@ async def list_sessions(
     return [_row_to_response(r) for r in rows]
 
 
+@router.get("/demo", response_model=SessionResponse)
+async def get_demo_session(
+    db=Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Return the shared demo session (read-only, accessible to all authenticated users)."""
+    row = await db.fetchrow(
+        """
+        SELECT s.*,
+               c.name AS circuit_name,
+               (SELECT MIN(l.lap_time_ms)
+                FROM laps l
+                WHERE l.session_id = s.id
+                  AND l.is_valid = true
+                  AND l.is_outlap = false
+                  AND l.is_inlap = false
+                  AND l.lap_time_ms IS NOT NULL
+               ) AS best_lap_time_ms
+        FROM sessions s
+        LEFT JOIN circuits c ON c.id = s.circuit_id
+        WHERE s.id = $1 AND s.status != 'deleted'
+        """,
+        uuid.UUID(DEMO_SESSION_ID),
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo session not found")
+    return _row_to_response(row)
+
+
 @router.get("/{session_id}", response_model=SessionResponse)
 async def get_session(
     session_id: uuid.UUID,
@@ -105,7 +134,7 @@ async def get_session(
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
-    if str(row["owner_id"]) != str(current_user["id"]):
+    if str(row["owner_id"]) != str(current_user["id"]) and str(session_id) != DEMO_SESSION_ID:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return _row_to_response(row)
 

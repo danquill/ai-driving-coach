@@ -8,7 +8,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, DEMO_SESSION_ID
 from app.schemas.lap import IdealLapResponse, LapDetailResponse, LapSectorResponse
 
 logger = structlog.get_logger(__name__)
@@ -27,7 +27,7 @@ async def _get_session_or_404(session_id: uuid.UUID, current_user: dict, db) -> 
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
-    if str(row["owner_id"]) != str(current_user["id"]):
+    if str(row["owner_id"]) != str(current_user["id"]) and str(session_id) != DEMO_SESSION_ID:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return dict(row)
 

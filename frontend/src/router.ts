@@ -11,6 +11,7 @@ import { NewSessionPage } from './pages/NewSessionPage'
 import { SessionDetailPage } from './pages/SessionDetailPage'
 import { AdminCircuitsPage } from './pages/AdminCircuitsPage'
 import { AdminUsersPage } from './pages/AdminUsersPage'
+import { ProfilePage } from './pages/ProfilePage'
 
 // ─── Root route ───────────────────────────────────────────────────────────────
 
@@ -62,6 +63,12 @@ const adminUsersRoute = createRoute({
   component: AdminUsersPage,
 })
 
+const profileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/profile',
+  component: ProfilePage,
+})
+
 // ─── Route tree ───────────────────────────────────────────────────────────────
 
 const routeTree = rootRoute.addChildren([
@@ -72,6 +79,7 @@ const routeTree = rootRoute.addChildren([
   sessionDetailRoute,
   adminCircuitsRoute,
   adminUsersRoute,
+  profileRoute,
 ])
 
 // ─── Router instance ──────────────────────────────────────────────────────────

@@ -8,6 +8,9 @@ from fastapi.security import OAuth2PasswordBearer
 from app.database import get_db
 from app.services.auth import decode_access_token
 
+# Session shared as a read-only example for all authenticated users.
+DEMO_SESSION_ID = "4c9501e1-6f5a-4762-b623-9330f5498bb1"
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 

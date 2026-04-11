@@ -42,7 +42,14 @@ export function AppHeader({ subtitle, navItems, rightAction }: AppHeaderProps) {
 
         <div className="flex items-center">
           {user && (
-            <span className="text-xs text-[#4b5563] pr-4">{user.display_name}</span>
+            <button
+              onClick={() => navigate({ to: '/profile' })}
+              className="flex items-center gap-2 text-xs px-2.5 py-1 rounded hover:bg-[#1e1e2e] transition-colors mr-2 group"
+            >
+              <span className="text-[#9ca3af] group-hover:text-white transition-colors">{user.display_name}</span>
+              <span className="text-[#2e2e4e]">|</span>
+              <span className="text-[#4b5563] group-hover:text-[#457b9d] transition-colors">Profile</span>
+            </button>
           )}
           {navItems && navItems.length > 0 && (
             <div className="flex items-center gap-1 border-l border-[#1e1e2e] pl-4">
