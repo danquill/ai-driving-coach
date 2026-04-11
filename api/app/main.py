@@ -32,6 +32,7 @@ from app.api.telemetry import router as telemetry_router
 from app.api.analysis import router as analysis_router
 from app.api.coaching import router as coaching_router
 from app.api.circuits import router as circuits_router
+from app.api.corner_knowledge import router as corner_knowledge_router
 
 # ---------------------------------------------------------------------------
 # Logging setup (structlog → JSON in production, colored in dev)
@@ -162,6 +163,7 @@ app.include_router(telemetry_router, prefix="/api/v1")
 app.include_router(analysis_router, prefix="/api/v1")
 app.include_router(coaching_router, prefix="/api/v1")
 app.include_router(circuits_router, prefix="/api/v1")
+app.include_router(corner_knowledge_router, prefix="/api/v1")
 
 # ---------------------------------------------------------------------------
 # CORS middleware

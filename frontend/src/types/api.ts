@@ -11,6 +11,7 @@ export interface UserResponse {
   email: string
   display_name: string
   role: string
+  is_active: boolean
   created_at: string
 }
 
@@ -46,6 +47,8 @@ export interface Session {
   session_type?: SessionType
   status: SessionStatus
   created_at: string
+  best_lap_time_ms?: number
+  circuit_name?: string
 }
 
 // ─── Files ───────────────────────────────────────────────────────────────────
@@ -125,6 +128,7 @@ export interface CoachingInsight {
   id: string
   session_id: string
   lap_id?: string
+  lap_number?: number
   analysis_job_id: string
   category: string
   insight_text: string
@@ -132,6 +136,22 @@ export interface CoachingInsight {
   distance_m_start?: number
   distance_m_end?: number
   created_at: string
+  feedback?: 'good' | 'bad'
+  feedback_note?: string
+}
+
+export interface CircuitCornerKnowledge {
+  id: string
+  circuit_id: string
+  corner_number?: number
+  typical_phase_of_interest?: string
+  known_handling_tendency?: string
+  correct_technique?: string
+  incorrect_recommendations?: string[]
+  coaching_notes?: string
+  source: 'manual' | 'correction'
+  created_at: string
+  updated_at: string
 }
 
 // ─── Circuits ────────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any, Optional
 
@@ -92,7 +93,7 @@ async def trigger_analysis(
                 detail="No circuit assigned to this session. Assign a circuit before running lap detection.",
             )
 
-    # For ai_coaching: verify an ideal_lap exists
+    # For ai_coaching: verify an ideal_lap exists and compare_lap_number is provided
     if body.job_type == "ai_coaching":
         ideal_row = await db.fetchrow(
             "SELECT id FROM ideal_laps WHERE session_id = $1 LIMIT 1",
@@ -102,6 +103,11 @@ async def trigger_analysis(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Complete sector analysis before requesting coaching insights",
+            )
+        if not (body.params or {}).get("compare_lap_number"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Select a lap to analyse before generating insights",
             )
 
     job_id = uuid.uuid4()
@@ -115,7 +121,7 @@ async def trigger_analysis(
         session_id,
         uuid.UUID(str(current_user["id"])),
         body.job_type,
-        str(body.params or {}),
+        json.dumps(body.params or {}),
     )
 
     # Dispatch the appropriate Celery task

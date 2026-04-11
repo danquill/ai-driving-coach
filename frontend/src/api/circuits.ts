@@ -1,5 +1,5 @@
 import client from './client'
-import type { Circuit, CircuitCorner, CircuitSector } from '../types/api'
+import type { Circuit, CircuitCorner, CircuitCornerKnowledge, CircuitSector } from '../types/api'
 
 export async function listCircuits(): Promise<Circuit[]> {
   const response = await client.get<Circuit[]>('/circuits')
@@ -88,6 +88,47 @@ export async function updateSector(
 
 export async function deleteSector(circuitId: string, sectorId: string): Promise<void> {
   await client.delete(`/circuits/${circuitId}/sectors/${sectorId}`)
+}
+
+// ─── Corner Knowledge ─────────────────────────────────────────────────────────
+
+export interface KnowledgePayload {
+  corner_number?: number
+  typical_phase_of_interest?: string
+  known_handling_tendency?: string
+  correct_technique?: string
+  incorrect_recommendations?: string[]
+  coaching_notes?: string
+  source?: 'manual' | 'correction'
+}
+
+export async function listCornerKnowledge(circuitId: string): Promise<CircuitCornerKnowledge[]> {
+  const response = await client.get<CircuitCornerKnowledge[]>(`/circuits/${circuitId}/corner-knowledge`)
+  return response.data
+}
+
+export async function createCornerKnowledge(
+  circuitId: string,
+  data: KnowledgePayload,
+): Promise<CircuitCornerKnowledge> {
+  const response = await client.post<CircuitCornerKnowledge>(`/circuits/${circuitId}/corner-knowledge`, data)
+  return response.data
+}
+
+export async function updateCornerKnowledge(
+  circuitId: string,
+  knowledgeId: string,
+  data: Partial<KnowledgePayload>,
+): Promise<CircuitCornerKnowledge> {
+  const response = await client.patch<CircuitCornerKnowledge>(
+    `/circuits/${circuitId}/corner-knowledge/${knowledgeId}`,
+    data,
+  )
+  return response.data
+}
+
+export async function deleteCornerKnowledge(circuitId: string, knowledgeId: string): Promise<void> {
+  await client.delete(`/circuits/${circuitId}/corner-knowledge/${knowledgeId}`)
 }
 
 export async function importGeometryFromLap(

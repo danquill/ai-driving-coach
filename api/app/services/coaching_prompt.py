@@ -212,6 +212,465 @@ def _format_lap_time(ms: int) -> str:
     return f"{minutes}:{seconds:06.3f}"
 
 
+def _kph_to_mph(kph: float | None) -> float | None:
+    if kph is None:
+        return None
+    return round(kph * 0.621371, 1)
+
+
+def _detect_corner_phase(
+    points: list[dict],
+    steering_peak: float,
+) -> str:
+    """Classify the most representative phase for a telemetry window.
+
+    steering_peak should be the known maximum steering angle for the full corner
+    (not just the window). When the window is the full sector trace, this equals
+    max(abs(steering_deg)) over the window.
+
+    Detection order (strongest signals first):
+    1. Entry:      majority of points have brake_pct > 5 (brake is the dominant signal)
+    2. Exit:       meaningful throttle present (avg throttle > 5%) — throttle is the
+                   clearest exit signal regardless of steering trend
+    3. Turn-in:    steering loading (last-third avg > first-third avg × 1.2), brake < 15%
+    4. Mid-corner: fallthrough
+
+    Returns the dominant phase label for the window.
+    """
+    if not points or steering_peak is None or steering_peak == 0:
+        return "entry"
+
+    steers = [abs(p.get("steering_deg") or 0) for p in points]
+    brakes = [(p.get("brake_pct") or 0) for p in points]
+    throttles = [(p.get("throttle_pct") or 0) for p in points]
+
+    majority = len(points) // 2
+
+    # --- 1. Entry: brake is the dominant input ---
+    brake_active_count = sum(1 for b in brakes if b > 15)
+    if brake_active_count > majority:
+        return "entry"
+
+    # --- 2. Exit: meaningful throttle present ---
+    avg_throttle = sum(throttles) / len(throttles)
+    if avg_throttle > 15:
+        return "exit"
+
+    # --- 3. Turn-in: steering clearly loading, brake absent ---
+    if len(steers) >= 3:
+        n3 = max(1, len(steers) // 3)
+        first_third_avg = sum(steers[:n3]) / n3
+        last_third_avg = sum(steers[-n3:]) / n3
+        max_brake = max(brakes)
+        if last_third_avg > first_third_avg * 1.2 and max_brake < 15:
+            return "turn-in"
+
+    # --- 4. Mid-corner fallthrough ---
+    return "mid-corner"
+
+
+def classify_corners(
+    worst_sectors: list[dict],
+    circuit_corners: list[dict] | None,
+    ideal_lap: dict,
+    lap_sectors: list[dict],
+) -> list[dict]:
+    """Pre-compute a structured corner classification block for each worst sector.
+
+    For each sector in worst_sectors, produces a classification dict describing:
+    - Corner identity (name, distance)
+    - Phase of interest (entry / turn-in / mid-corner / exit)
+    - Speed comparison vs ideal lap at that phase
+    - Brake trace characteristics
+    - Steering state
+    - Throttle state
+    - Engine braking presence
+    - Classification summary (front axle state, deceleration need, handling condition)
+
+    Args:
+        worst_sectors: list of sector dicts (with telemetry_window and braking_zone)
+        circuit_corners: list of corner dicts with corner_number, name, distance_m
+        ideal_lap: ideal_lap dict with sector_sources
+        lap_sectors: all lap_sectors rows for the session
+
+    Returns:
+        list of classification dicts, one per sector in worst_sectors.
+    """
+    corner_map: dict[float, dict] = {}
+    if circuit_corners:
+        for c in circuit_corners:
+            corner_map[float(c["distance_m"])] = c
+
+    # Build ideal sector time map for speed comparisons
+    ideal_sources: list[dict] = ideal_lap.get("sector_sources") or []
+    ideal_sector_map: dict[int, dict] = {}
+    for src in ideal_sources:
+        sn = src.get("sector_number")
+        if sn is not None:
+            ideal_sector_map[sn] = src
+
+    classifications: list[dict] = []
+
+    for ws in worst_sectors:
+        sector_num = ws.get("sector_number", "?")
+        telemetry = ws.get("telemetry_window") or []
+        braking_zone = ws.get("braking_zone") or []
+
+        # --- Corner identity ---
+        # Find the nearest named corner by distance_m to the sector midpoint
+        corner_name = f"Sector {sector_num}"
+        corner_distance_m: float | None = None
+        if telemetry and circuit_corners:
+            mid_dist = telemetry[len(telemetry) // 2].get("distance_m") or 0.0
+            nearest = min(circuit_corners, key=lambda c: abs(c["distance_m"] - mid_dist))
+            corner_name = nearest.get("name") or f"T{nearest['corner_number']}"
+            corner_distance_m = nearest["distance_m"]
+        elif telemetry:
+            corner_distance_m = telemetry[0].get("distance_m")
+
+        # --- Steering peak for phase detection ---
+        all_steers = [abs(p.get("steering_deg") or 0) for p in telemetry]
+        steering_peak = max(all_steers) if all_steers else 0.0
+
+        # --- Phase detection ---
+        phase = _detect_corner_phase(telemetry, steering_peak)
+
+        # --- Speed at phase (driver vs ideal) ---
+        # Prefer the pre-computed entry/exit speed fields from the sector record,
+        # falling back to reading directly from the telemetry window.
+        driver_speed_kph: float | None = None
+        ideal_speed_kph: float | None = None
+
+        if phase in ("entry", "turn-in"):
+            driver_speed_kph = ws.get("entry_speed_kph") or (telemetry[0].get("speed_kph") if telemetry else None)
+            ideal_speed_kph = ws.get("ideal_entry_speed_kph")
+        elif phase in ("mid-corner", "exit"):
+            driver_speed_kph = ws.get("exit_speed_kph") or (telemetry[len(telemetry) // 2].get("speed_kph") if telemetry else None)
+            ideal_speed_kph = ws.get("ideal_exit_speed_kph")
+
+        driver_speed_mph = _kph_to_mph(driver_speed_kph)
+        ideal_speed_mph = _kph_to_mph(ideal_speed_kph)
+        speed_delta_mph: float | None = None
+        if driver_speed_mph is not None and ideal_speed_mph is not None:
+            speed_delta_mph = round(driver_speed_mph - ideal_speed_mph, 1)
+
+        # --- Brake trace ---
+        brake_description = "zero"
+        peak_brake = 0.0
+        brake_build_s: float | None = None
+
+        if braking_zone:
+            brakes = [p.get("brake_pct") or 0.0 for p in braking_zone]
+            peak_brake = max(brakes)
+            peak_idx_bz = brakes.index(peak_brake)
+            # Estimate build time: samples before peak where brake was < 20% of peak
+            threshold_20 = peak_brake * 0.20
+            onset_idx = next(
+                (i for i in range(peak_idx_bz) if brakes[i] >= threshold_20),
+                peak_idx_bz,
+            )
+            # Rough time estimate: assume ~10 Hz sample rate
+            brake_build_s = round((peak_idx_bz - onset_idx) * 0.1, 2)
+
+            # Classify brake trace shape
+            if peak_brake >= 60:
+                brake_description = f"threshold (peak {peak_brake:.0f}%, built in {brake_build_s}s)"
+            elif peak_brake >= 15:
+                # Check if it's trail-like (progressive reduction after peak)
+                post_peak = brakes[peak_idx_bz:]
+                if len(post_peak) >= 3 and post_peak[-1] < peak_brake * 0.5:
+                    brake_description = f"trail (peak {peak_brake:.0f}%, progressive release)"
+                else:
+                    brake_description = f"light ({peak_brake:.0f}%)"
+            # below 15% is noise floor — treat as zero
+        elif telemetry:
+            brakes_tel = [p.get("brake_pct") or 0.0 for p in telemetry]
+            peak_brake = max(brakes_tel)
+            if peak_brake >= 15:
+                brake_description = f"light ({peak_brake:.0f}%)"
+
+        # --- Steering state ---
+        steer_state = "neutral"
+        if telemetry and steering_peak > 0:
+            pct_lock = round(steering_peak, 1)
+            steers = [abs(p.get("steering_deg") or 0) for p in telemetry]
+            mid = len(steers) // 2
+            if mid > 0:
+                first_avg = sum(steers[:mid]) / mid
+                last_avg = sum(steers[mid:]) / max(1, len(steers[mid:]))
+                if last_avg > first_avg * 1.15:
+                    trend = "loading"
+                elif last_avg < first_avg * 0.85:
+                    trend = "unwinding"
+                else:
+                    trend = "holding"
+            else:
+                trend = "holding"
+            steer_state = f"{pct_lock:.0f}° lock, {trend}"
+
+        # --- Throttle state ---
+        throttle_state = "zero"
+        if telemetry:
+            throttles = [p.get("throttle_pct") or 0.0 for p in telemetry]
+            peak_throttle = max(throttles)
+            avg_throttle = sum(throttles) / len(throttles)
+            if avg_throttle >= 15:
+                throttle_state = f"avg {avg_throttle:.0f}% (peak {peak_throttle:.0f}%)"
+            elif peak_throttle >= 80:
+                # High peak but low avg = driver was full throttle then lifted into the corner
+                throttle_state = f"full throttle then lifted (peak {peak_throttle:.0f}%, avg {avg_throttle:.0f}%)"
+            elif peak_throttle >= 15:
+                throttle_state = f"partial — avg {avg_throttle:.0f}%, peak {peak_throttle:.0f}%"
+
+        # --- Engine braking: lon_g negative while brake=0 ---
+        engine_braking = "none"
+        if telemetry:
+            for p in telemetry:
+                lon_g = p.get("lon_g")
+                brk = p.get("brake_pct") or 0.0
+                if lon_g is not None and lon_g < -0.05 and brk < 15:
+                    engine_braking = "active"
+                    break
+
+        # --- Classification summary ---
+        # Front axle state
+        if peak_brake >= 15 or (phase == "turn-in" and peak_brake >= 15):
+            front_axle_state = "loaded"
+        elif phase == "mid-corner" and peak_brake < 15:
+            front_axle_state = "unloaded"
+        else:
+            front_axle_state = "transitioning"
+
+        # Deceleration need
+        if phase == "entry" and peak_brake >= 15:
+            decel_need = "yes"
+        elif phase in ("mid-corner", "exit"):
+            decel_need = "already complete"
+        else:
+            decel_need = "no"
+
+        # Handling condition from steering trend + speed
+        handling_condition = "neutral"
+        if telemetry:
+            steers = [abs(p.get("steering_deg") or 0) for p in telemetry]
+            speeds = [p.get("speed_kph") or 0.0 for p in telemetry]
+            throttles = [p.get("throttle_pct") or 0.0 for p in telemetry]
+            # Coast: brake and throttle both zero, speed above minimum
+            zero_throttle = all(t < 15 for t in throttles)
+            zero_brake = all((p.get("brake_pct") or 0) < 15 for p in telemetry)
+            if zero_throttle and zero_brake and min(speeds) > 30:
+                handling_condition = "coasting"
+            # Understeer: steering holding/increasing while speed dropping and throttle on
+            elif phase in ("mid-corner", "exit"):
+                mid = len(steers) // 2
+                if mid > 0:
+                    steer_late = sum(steers[mid:]) / max(1, len(steers[mid:]))
+                    steer_early = sum(steers[:mid]) / mid
+                    throttle_late = sum(throttles[mid:]) / max(1, len(throttles[mid:]))
+                    if steer_late >= steer_early * 0.95 and throttle_late > 10:
+                        handling_condition = "understeering"
+
+        # Overslowing: entry speed well below ideal
+        if (
+            speed_delta_mph is not None
+            and speed_delta_mph < -5
+            and phase in ("entry", "turn-in")
+        ):
+            handling_condition = "overslowing"
+
+        # Distance range from the telemetry window (lap-relative metres)
+        distances = [p["distance_m"] for p in telemetry if p.get("distance_m") is not None]
+        window_start_m = round(min(distances), 0) if distances else None
+        window_end_m = round(max(distances), 0) if distances else None
+
+        # Focus window anchored on the corner marker distance.
+        # Phase-appropriate offsets:
+        #   entry/turn-in: 100m before the corner to 50m after (braking zone leads the corner)
+        #   mid-corner:    30m before to 80m after (apex region)
+        #   exit:          0m before to 120m after (throttle application zone)
+        focus_start_m: float | None = None
+        focus_end_m: float | None = None
+        if corner_distance_m is not None:
+            if phase in ("entry", "turn-in"):
+                focus_start_m = round(max(0, corner_distance_m - 100), 0)
+                focus_end_m = round(corner_distance_m + 50, 0)
+            elif phase == "mid-corner":
+                focus_start_m = round(max(0, corner_distance_m - 30), 0)
+                focus_end_m = round(corner_distance_m + 80, 0)
+            else:  # exit
+                focus_start_m = round(max(0, corner_distance_m - 10), 0)
+                focus_end_m = round(corner_distance_m + 120, 0)
+        else:
+            # No corner marker — fall back to full sector window
+            focus_start_m = window_start_m
+            focus_end_m = window_end_m
+
+        classifications.append({
+            "corner_name": corner_name,
+            "corner_distance_m": corner_distance_m,
+            "sector_number": sector_num,
+            "phase": phase,
+            "driver_speed_mph": driver_speed_mph,
+            "ideal_speed_mph": ideal_speed_mph,
+            "speed_delta_mph": speed_delta_mph,
+            "brake_description": brake_description,
+            "steer_state": steer_state,
+            "throttle_state": throttle_state,
+            "engine_braking": engine_braking,
+            "front_axle_state": front_axle_state,
+            "decel_need": decel_need,
+            "handling_condition": handling_condition,
+            "avg_delta_ms": ws.get("avg_delta_ms", 0),
+            "ideal_sector_ms": ws.get("ideal_sector_ms", 0),
+            "driver_best_ms": ws.get("driver_best_ms", 0),
+            "ideal_source_lap_number": ws.get("ideal_source_lap_number"),
+            "compare_lap_number": ws.get("compare_lap_number"),
+            "window_start_m": focus_start_m,
+            "window_end_m": focus_end_m,
+        })
+
+    return classifications
+
+
+def format_corner_classifications(classifications: list[dict]) -> str:
+    """Render corner classification dicts as a structured text block for the API."""
+    lines: list[str] = []
+    lines.append(
+        "IDEAL LAP NOTE: The ideal lap is the driver's own best sector compilation "
+        "from this session. Every sector is a valid, demonstrated data point. "
+        "Traffic-affected laps have been excluded from this analysis."
+    )
+    lines.append("")
+
+    for cls in classifications:
+        dist_str = f"{cls['corner_distance_m']:.0f}m" if cls["corner_distance_m"] is not None else "N/A"
+        w_start = cls.get("window_start_m")
+        w_end = cls.get("window_end_m")
+        window_str = (
+            f"{w_start:.0f}–{w_end:.0f}m" if w_start is not None and w_end is not None else "N/A"
+        )
+        lines.append(f"Corner name: {cls['corner_name']}  ← use this exact value for corner_name in your tool call")
+        compare_lap = cls.get("compare_lap_number")
+        lap_ref = f"Lap {compare_lap} (compare)" if compare_lap is not None else "N/A"
+        lines.append(
+            f"Corner: {cls['corner_name']} | Distance: {dist_str} | "
+            f"Analysis window: {window_str} | Compare lap: {lap_ref}"
+        )
+
+        speed_str = f"{cls['driver_speed_mph']} mph" if cls["driver_speed_mph"] is not None else "N/A"
+        source_lap = cls.get("ideal_source_lap_number")
+        lines.append(f"Phase of interest: {cls['phase']}")
+        # Only show speed delta when compare lap is not the ideal source lap
+        if cls.get("speed_delta_mph") is not None and source_lap != cls.get("compare_lap_number"):
+            delta_str = f"{cls['speed_delta_mph']:+.1f} mph"
+            ideal_speed_str = f"{cls['ideal_speed_mph']} mph" if cls["ideal_speed_mph"] is not None else "N/A"
+            lines.append(f"Speed at phase: {speed_str} | Ideal lap: {ideal_speed_str} | Delta: {delta_str}")
+        else:
+            lines.append(f"Speed at phase: {speed_str}")
+        lines.append(f"Brake trace: {cls['brake_description']}")
+        lines.append(f"Steering: {cls['steer_state']}")
+        lines.append(f"Throttle: {cls['throttle_state']}")
+        lines.append(f"Engine braking: {cls['engine_braking']}")
+        lines.append(
+            f"Classification: front axle {cls['front_axle_state']}, "
+            f"deceleration needed {cls['decel_need']}, "
+            f"{cls['handling_condition']}"
+        )
+        source_lap = cls.get("ideal_source_lap_number")
+        compare_lap = cls.get("compare_lap_number")
+        source_note = (
+            f" (theoretical fastest — best sector from Lap {source_lap})"
+            if source_lap is not None else " (theoretical fastest)"
+        )
+        lines.append(
+            f"Sector delta: +{cls['avg_delta_ms']}ms vs theoretical fastest{source_note} | "
+            f"Compare lap: Lap {compare_lap}"
+        )
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def format_corner_knowledge(
+    knowledge_entries: list[dict],
+    circuit_corners: list[dict] | None,
+) -> str:
+    """Render corner knowledge entries as a CORNER-SPECIFIC CONSTRAINTS block.
+
+    Returns an empty string if there are no entries to inject.
+
+    Designed to appear:
+    - In Call 1 user message: prepended before corner classification blocks
+    - In Call 2 system prompt: appended as additional hard constraints
+    """
+    if not knowledge_entries:
+        return ""
+
+    # Build corner lookup: corner_number → {name, distance_m}
+    corner_map: dict[int, dict] = {}
+    if circuit_corners:
+        for c in circuit_corners:
+            corner_map[int(c["corner_number"])] = c
+
+    lines: list[str] = []
+    lines.append("=" * 60)
+    lines.append("CORNER-SPECIFIC CONSTRAINTS")
+    lines.append("=" * 60)
+    lines.append(
+        "These constraints are derived from curated knowledge and driver feedback "
+        "for this circuit. They are HARD RULES. Do not violate them regardless of "
+        "what the telemetry suggests."
+    )
+    lines.append("")
+
+    # Circuit-wide entries first (corner_number IS NULL)
+    circuit_wide = [e for e in knowledge_entries if e.get("corner_number") is None]
+    corner_specific = [e for e in knowledge_entries if e.get("corner_number") is not None]
+
+    for entry in circuit_wide:
+        lines.append("CIRCUIT-WIDE:")
+        _append_knowledge_fields(lines, entry)
+        lines.append("")
+
+    # Group by corner_number
+    from itertools import groupby
+    corner_specific_sorted = sorted(corner_specific, key=lambda e: e["corner_number"])
+    for cn, group in groupby(corner_specific_sorted, key=lambda e: e["corner_number"]):
+        c_info = corner_map.get(int(cn))
+        if c_info:
+            name_part = f" ({c_info['name']})" if c_info.get("name") else ""
+            dist_part = f" — @{c_info['distance_m']:.0f}m"
+            header = f"T{cn}{name_part}{dist_part}:"
+        else:
+            header = f"T{cn}:"
+        lines.append(header)
+        for entry in group:
+            _append_knowledge_fields(lines, entry)
+        lines.append("")
+
+    lines.append("=" * 60)
+    return "\n".join(lines)
+
+
+def _append_knowledge_fields(lines: list[str], entry: dict) -> None:
+    """Append non-null knowledge fields as indented lines."""
+    if entry.get("typical_phase_of_interest"):
+        lines.append(f"  Phase: {entry['typical_phase_of_interest']}")
+    if entry.get("known_handling_tendency"):
+        lines.append(f"  Known tendency: {entry['known_handling_tendency']}")
+    if entry.get("correct_technique"):
+        lines.append(f"  Correct technique: {entry['correct_technique']}")
+    incorrect = entry.get("incorrect_recommendations")
+    if incorrect:
+        recs = incorrect if isinstance(incorrect, list) else []
+        if recs:
+            lines.append(f"  NEVER recommend: {', '.join(recs)}")
+    if entry.get("coaching_notes"):
+        lines.append(f"  Notes: {entry['coaching_notes']}")
+    if entry.get("source") == "correction":
+        lines.append("  [Source: driver correction — treated as ground truth]")
+
+
 def build_coaching_prompt(
     session: dict,
     circuit: dict,
@@ -326,18 +785,15 @@ def build_coaching_prompt(
         exit_speed = ws.get("exit_speed_kph")
         ideal_exit_speed = ws.get("ideal_exit_speed_kph")
         avg_delta_ms = ws.get("avg_delta_ms", 0)
-        worst_lap_delta_ms = ws.get("worst_lap_delta_ms")
-        worst_lap_number = ws.get("worst_lap_number")
-        best_sector_lap_number = ws.get("best_lap_number")
-        lap_count = ws.get("lap_count", 1)
+        compare_lap_num = ws.get("compare_lap_number")
+        ideal_source_lap = ws.get("ideal_source_lap_number")
 
-        lines.append(f"\n--- Worst Sector #{i}: Sector {sector_num} ---")
-        lines.append(f"  Driver's best sector time:  {driver_best_ms:,} ms ({driver_best_ms/1000:.3f}s)")
-        lines.append(f"  Ideal sector time:          {ideal_sector_ms:,} ms ({ideal_sector_ms/1000:.3f}s)")
-        lines.append(f"  Best lap delta to ideal:    +{driver_best_ms - ideal_sector_ms:,} ms (+{(driver_best_ms - ideal_sector_ms)/1000:.3f}s)")
-        lines.append(f"  Average delta (all {lap_count} laps):  +{avg_delta_ms:,} ms (+{avg_delta_ms/1000:.3f}s)")
-        if worst_lap_delta_ms is not None and worst_lap_number is not None:
-            lines.append(f"  Worst single lap (Lap {worst_lap_number}):  +{worst_lap_delta_ms:,} ms (+{worst_lap_delta_ms/1000:.3f}s)")
+        delta_to_ideal = driver_best_ms - ideal_sector_ms
+
+        lines.append(f"\n--- Sector #{i}: Sector {sector_num} (Lap {compare_lap_num}) ---")
+        lines.append(f"  Compare lap sector time:    {driver_best_ms:,} ms ({driver_best_ms/1000:.3f}s)")
+        lines.append(f"  Theoretical fastest:        {ideal_sector_ms:,} ms ({ideal_sector_ms/1000:.3f}s)")
+        lines.append(f"  Delta to theoretical:       +{delta_to_ideal:,} ms (+{delta_to_ideal/1000:.3f}s)")
 
         if entry_speed is not None:
             entry_str = f"{entry_speed:.1f} kph"
@@ -351,7 +807,7 @@ def build_coaching_prompt(
 
         # Full sector telemetry trace (20 points)
         telemetry_window = ws.get("telemetry_window", [])
-        trace_lap_label = f"Lap {best_sector_lap_number}" if best_sector_lap_number is not None else "best sector lap"
+        trace_lap_label = f"Lap {compare_lap_num}" if compare_lap_num is not None else "compare lap"
         has_speed = any(p.get("speed_kph") is not None for p in telemetry_window)
         has_throttle = any(p.get("throttle_pct") is not None for p in telemetry_window)
         has_brake = any(p.get("brake_pct") is not None for p in telemetry_window)

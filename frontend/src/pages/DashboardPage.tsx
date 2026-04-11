@@ -7,7 +7,9 @@ import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { EmptyState } from '../components/ui/EmptyState'
 import { SpinnerOverlay } from '../components/ui/Spinner'
+import { AppHeader } from '../components/ui/AppHeader'
 import { useStore } from '../store'
+import { formatLapTime, formatSessionDate } from '../utils/telemetry'
 
 function SessionCard({ session, onDelete }: { session: Session; onDelete: (id: string) => void }) {
   const navigate = useNavigate()
@@ -38,13 +40,24 @@ function SessionCard({ session, onDelete }: { session: Session; onDelete: (id: s
             {session.name ?? 'Untitled Session'}
           </h3>
           <p className="text-xs text-[#6b7280] mt-0.5">
-            {session.session_date
-              ? new Date(session.session_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
-              : 'No date'}
+            {session.session_date ? formatSessionDate(session.session_date) : 'No date'}
           </p>
         </div>
         <Badge status={session.status} className="ml-3 flex-shrink-0" />
       </div>
+
+      {/* Best lap time */}
+      {session.best_lap_time_ms != null && (
+        <div className="flex items-center gap-1.5">
+          <svg className="w-3 h-3 text-[#457b9d] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="text-xs font-mono text-[#e2e8f0] tracking-tight">
+            {formatLapTime(session.best_lap_time_ms)}
+          </span>
+          <span className="text-xs text-[#4b5563]">best</span>
+        </div>
+      )}
 
       {/* Delete controls */}
       <div className="mt-3 pt-3 border-t border-[#1e1e2e] flex items-center justify-end gap-2">
@@ -80,7 +93,6 @@ function SessionCard({ session, onDelete }: { session: Session; onDelete: (id: s
 export function DashboardPage() {
   const navigate = useNavigate()
   const user = useStore((s) => s.user)
-  const clearAuth = useStore((s) => s.clearAuth)
   const queryClient = useQueryClient()
 
   const { data: sessions, isLoading, error } = useQuery({
@@ -93,38 +105,15 @@ export function DashboardPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
   })
 
-  function handleLogout() {
-    clearAuth()
-    navigate({ to: '/login' })
-  }
-
   return (
     <div className="min-h-screen bg-[#0a0a0f]">
-      {/* Top Nav */}
-      <header className="border-b border-[#1e1e2e] bg-[#12121a]">
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-black tracking-[0.2em] text-white">
-              TR<span className="text-[#e63946]">A</span>CK
-            </h1>
-            <span className="text-[#1e1e2e]">|</span>
-            <span className="text-sm text-[#6b7280]">Telemetry Platform</span>
-          </div>
-          <div className="flex items-center gap-4">
-            {user && (
-              <span className="text-xs text-[#6b7280]">{user.display_name}</span>
-            )}
-            {user?.role === 'admin' && (
-              <Button variant="ghost" size="sm" onClick={() => navigate({ to: '/admin/circuits' })}>
-                Circuits
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              Sign Out
-            </Button>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        subtitle="Telemetry Platform"
+        navItems={user?.role === 'admin' ? [
+          { label: 'Circuits', to: '/admin/circuits' },
+          { label: 'Users', to: '/admin/users' },
+        ] : undefined}
+      />
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Page Header */}
@@ -173,17 +162,42 @@ export function DashboardPage() {
           />
         )}
 
-        {!isLoading && sessions && sessions.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {sessions.map((session) => (
-              <SessionCard
-                key={session.id}
-                session={session}
-                onDelete={(id) => deleteMutation.mutate(id)}
-              />
-            ))}
-          </div>
-        )}
+        {!isLoading && sessions && sessions.length > 0 && (() => {
+          // Group sessions by circuit name, preserving order of first appearance
+          const groups: { name: string; sessions: Session[] }[] = []
+          const seen = new Map<string, Session[]>()
+          for (const s of sessions) {
+            const key = s.circuit_name ?? 'No Track Assigned'
+            if (!seen.has(key)) {
+              const arr: Session[] = []
+              seen.set(key, arr)
+              groups.push({ name: key, sessions: arr })
+            }
+            seen.get(key)!.push(s)
+          }
+          return (
+            <div className="space-y-8">
+              {groups.map((group) => (
+                <div key={group.name}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <h3 className="text-sm font-semibold text-[#e2e8f0]">{group.name}</h3>
+                    <div className="flex-1 h-px bg-[#1e1e2e]" />
+                    <span className="text-xs text-[#4b5563]">{group.sessions.length}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {group.sessions.map((session) => (
+                      <SessionCard
+                        key={session.id}
+                        session={session}
+                        onDelete={(id) => deleteMutation.mutate(id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        })()}
       </main>
     </div>
   )

@@ -13,6 +13,7 @@ class CoachingInsightResponse(BaseModel):
     id: uuid.UUID
     session_id: uuid.UUID
     lap_id: Optional[uuid.UUID] = None
+    lap_number: Optional[int] = None
     analysis_job_id: uuid.UUID
     category: str
     insight_text: str
@@ -23,5 +24,7 @@ class CoachingInsightResponse(BaseModel):
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
     created_at: datetime
+    feedback: Optional[str] = None
+    feedback_note: Optional[str] = None
 
     model_config = {"from_attributes": True}

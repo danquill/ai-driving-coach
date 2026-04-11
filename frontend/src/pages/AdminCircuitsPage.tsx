@@ -6,11 +6,13 @@ import {
   listCircuits, createCircuit, deleteCircuit,
   createCorner, updateCorner, deleteCorner,
   createSector, deleteSector,
+  listCornerKnowledge, createCornerKnowledge, deleteCornerKnowledge,
   listSessionsForCircuit, importGeometryFromLap,
 } from '../api/circuits'
-import type { Circuit, CircuitCorner, CircuitSector } from '../types/api'
+import type { Circuit, CircuitCorner, CircuitCornerKnowledge, CircuitSector } from '../types/api'
 import { useStore } from '../store'
 import { useNavigate } from '@tanstack/react-router'
+import { AppHeader } from '../components/ui/AppHeader'
 
 // ─── Corner editor row ────────────────────────────────────────────────────────
 
@@ -472,9 +474,224 @@ function PendingSectorForm({
 
 // ─── Circuit detail panel ─────────────────────────────────────────────────────
 
+// ─── Knowledge tab ────────────────────────────────────────────────────────────
+
+const PHASE_OPTIONS = ['', 'entry', 'turn-in', 'mid-corner', 'exit'] as const
+
+function KnowledgeTab({ circuit }: { circuit: Circuit }) {
+  const qc = useQueryClient()
+
+  const { data: entries = [], isLoading } = useQuery({
+    queryKey: ['cornerKnowledge', circuit.id],
+    queryFn: () => listCornerKnowledge(circuit.id),
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (data: Parameters<typeof createCornerKnowledge>[1]) =>
+      createCornerKnowledge(circuit.id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cornerKnowledge', circuit.id] })
+      setForm(emptyForm)
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteCornerKnowledge(circuit.id, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['cornerKnowledge', circuit.id] }),
+  })
+
+  const emptyForm = {
+    corner_number: '',
+    typical_phase_of_interest: '',
+    known_handling_tendency: '',
+    correct_technique: '',
+    incorrect_recommendations: '',
+    coaching_notes: '',
+  }
+  const [form, setForm] = useState(emptyForm)
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const payload: Parameters<typeof createCornerKnowledge>[1] = {
+      coaching_notes: form.coaching_notes || undefined,
+      known_handling_tendency: form.known_handling_tendency || undefined,
+      correct_technique: form.correct_technique || undefined,
+      typical_phase_of_interest: form.typical_phase_of_interest || undefined,
+      incorrect_recommendations: form.incorrect_recommendations
+        ? form.incorrect_recommendations.split(',').map((s) => s.trim()).filter(Boolean)
+        : undefined,
+    }
+    if (form.corner_number) payload.corner_number = parseInt(form.corner_number, 10)
+    createMutation.mutate(payload)
+  }
+
+  const corners = circuit.corners ?? []
+  const cornerLabel = (cn: number | undefined) => {
+    if (cn == null) return 'Circuit-wide'
+    const c = corners.find((c) => c.corner_number === cn)
+    return c ? `T${cn}${c.name ? ` — ${c.name}` : ''}` : `T${cn}`
+  }
+
+  return (
+    <div className="space-y-4">
+      {isLoading ? (
+        <p className="text-sm text-[#4b5563] text-center py-4">Loading…</p>
+      ) : entries.length > 0 ? (
+        <div className="bg-[#0d0d14] rounded-lg border border-[#1e1e2e] overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-[#6b7280] uppercase tracking-wide">
+                <th className="px-3 py-2 w-32">Corner</th>
+                <th className="px-3 py-2 w-24">Phase</th>
+                <th className="px-3 py-2">Tendency / Notes</th>
+                <th className="px-3 py-2 w-20 text-center">Source</th>
+                <th className="px-3 py-2 w-16"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={entry.id} className="border-t border-[#1e1e2e] hover:bg-[#16162a] transition-colors align-top">
+                  <td className="px-3 py-2">
+                    <span className="text-xs font-mono text-[#e2e8f0]">{cornerLabel(entry.corner_number)}</span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className="text-xs text-[#9ca3af]">{entry.typical_phase_of_interest ?? '—'}</span>
+                  </td>
+                  <td className="px-3 py-2 max-w-xs">
+                    {entry.known_handling_tendency && (
+                      <p className="text-xs text-[#9ca3af]">{entry.known_handling_tendency}</p>
+                    )}
+                    {entry.coaching_notes && (
+                      <p className="text-xs text-[#d1d5db] mt-0.5 italic">
+                        "{entry.coaching_notes.length > 80
+                          ? entry.coaching_notes.slice(0, 80) + '…'
+                          : entry.coaching_notes}"
+                      </p>
+                    )}
+                    {entry.incorrect_recommendations && entry.incorrect_recommendations.length > 0 && (
+                      <p className="text-xs text-[#ff5252]/70 mt-0.5">
+                        Never: {entry.incorrect_recommendations.join(', ')}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <span className={`text-xs px-1.5 py-0.5 rounded border ${
+                      entry.source === 'correction'
+                        ? 'text-[#ff5252] border-[#ff5252]/30 bg-[#ff5252]/10'
+                        : 'text-[#6b7280] border-[#6b7280]/30'
+                    }`}>
+                      {entry.source}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      onClick={() => deleteMutation.mutate(entry.id)}
+                      className="text-xs text-[#6b7280] hover:text-[#ff5252] transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-sm text-[#4b5563] text-center py-4">
+          No knowledge entries yet. Add constraints below to guide the AI coach.
+        </p>
+      )}
+
+      {/* Add knowledge form */}
+      <div className="bg-[#0d0d14] rounded-lg border border-[#1e1e2e] p-4">
+        <p className="text-xs font-medium text-[#9ca3af] uppercase tracking-wide mb-3">Add Knowledge Entry</p>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-[#6b7280] block mb-1">
+                Corner # <span className="text-[#4b5563]">(leave blank for circuit-wide)</span>
+              </label>
+              <input
+                type="number"
+                value={form.corner_number}
+                onChange={(e) => setForm((f) => ({ ...f, corner_number: e.target.value }))}
+                placeholder="e.g. 4"
+                className="w-full text-xs bg-[#16162a] border border-[#1e1e2e] rounded px-2 py-1.5 text-[#d1d5db] placeholder-[#4b5563] focus:outline-none focus:border-[#457b9d]"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-[#6b7280] block mb-1">Phase of interest</label>
+              <select
+                value={form.typical_phase_of_interest}
+                onChange={(e) => setForm((f) => ({ ...f, typical_phase_of_interest: e.target.value }))}
+                className="w-full text-xs bg-[#16162a] border border-[#1e1e2e] rounded px-2 py-1.5 text-[#d1d5db] focus:outline-none focus:border-[#457b9d]"
+              >
+                {PHASE_OPTIONS.map((p) => (
+                  <option key={p} value={p}>{p || '—'}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-[#6b7280] block mb-1">Known handling tendency</label>
+            <input
+              type="text"
+              value={form.known_handling_tendency}
+              onChange={(e) => setForm((f) => ({ ...f, known_handling_tendency: e.target.value }))}
+              placeholder="e.g. entry understeer, exit oversteer"
+              className="w-full text-xs bg-[#16162a] border border-[#1e1e2e] rounded px-2 py-1.5 text-[#d1d5db] placeholder-[#4b5563] focus:outline-none focus:border-[#457b9d]"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-[#6b7280] block mb-1">Correct technique</label>
+            <input
+              type="text"
+              value={form.correct_technique}
+              onChange={(e) => setForm((f) => ({ ...f, correct_technique: e.target.value }))}
+              placeholder="e.g. trail brake through apex, late turn-in"
+              className="w-full text-xs bg-[#16162a] border border-[#1e1e2e] rounded px-2 py-1.5 text-[#d1d5db] placeholder-[#4b5563] focus:outline-none focus:border-[#457b9d]"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-[#6b7280] block mb-1">
+              Never recommend <span className="text-[#4b5563]">(comma-separated)</span>
+            </label>
+            <input
+              type="text"
+              value={form.incorrect_recommendations}
+              onChange={(e) => setForm((f) => ({ ...f, incorrect_recommendations: e.target.value }))}
+              placeholder="e.g. brush braking, earlier turn-in"
+              className="w-full text-xs bg-[#16162a] border border-[#1e1e2e] rounded px-2 py-1.5 text-[#d1d5db] placeholder-[#4b5563] focus:outline-none focus:border-[#457b9d]"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-[#6b7280] block mb-1">Coaching notes</label>
+            <textarea
+              value={form.coaching_notes}
+              onChange={(e) => setForm((f) => ({ ...f, coaching_notes: e.target.value }))}
+              rows={3}
+              placeholder="Free-text guidance injected directly into the coaching prompt…"
+              className="w-full text-xs bg-[#16162a] border border-[#1e1e2e] rounded px-2 py-1.5 text-[#d1d5db] placeholder-[#4b5563] focus:outline-none focus:border-[#457b9d] resize-none"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={createMutation.isPending}
+            className="px-4 py-1.5 text-xs font-medium bg-[#457b9d]/20 text-[#457b9d] border border-[#457b9d]/30 rounded hover:bg-[#457b9d]/30 transition-colors disabled:opacity-50"
+          >
+            {createMutation.isPending ? 'Adding…' : 'Add Knowledge Entry'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── Circuit detail ────────────────────────────────────────────────────────────
+
 function CircuitDetail({ circuit }: { circuit: Circuit }) {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'corners' | 'sectors'>('corners')
+  const [tab, setTab] = useState<'corners' | 'sectors' | 'knowledge'>('corners')
   const [pending, setPending] = useState<{ lat: number; lon: number; distance_m: number } | null>(null)
 
   const corners = circuit.corners ?? []
@@ -533,7 +750,7 @@ function CircuitDetail({ circuit }: { circuit: Circuit }) {
   }
 
   // Clear pending when switching tabs
-  function switchTab(t: 'corners' | 'sectors') {
+  function switchTab(t: 'corners' | 'sectors' | 'knowledge') {
     setTab(t)
     setPending(null)
   }
@@ -547,7 +764,7 @@ function CircuitDetail({ circuit }: { circuit: Circuit }) {
 
       {/* Tab switcher */}
       <div className="flex gap-1 border-b border-[#1e1e2e]">
-        {(['corners', 'sectors'] as const).map((t) => (
+        {(['corners', 'sectors', 'knowledge'] as const).map((t) => (
           <button
             key={t}
             onClick={() => switchTab(t)}
@@ -557,18 +774,20 @@ function CircuitDetail({ circuit }: { circuit: Circuit }) {
                 : 'text-[#6b7280] border-transparent hover:text-[#9ca3af]'
             }`}
           >
-            {t === 'corners' ? `Corners (${corners.length})` : `Sectors (${sectors.length})`}
+            {t === 'corners' ? `Corners (${corners.length})` : t === 'sectors' ? `Sectors (${sectors.length})` : 'Knowledge'}
           </button>
         ))}
       </div>
 
-      <CircuitMap
-        circuit={circuit}
-        corners={corners}
-        sectors={sectors}
-        mode={tab}
-        onPlace={handlePlace}
-      />
+      {tab !== 'knowledge' && (
+        <CircuitMap
+          circuit={circuit}
+          corners={corners}
+          sectors={sectors}
+          mode={tab as 'corners' | 'sectors'}
+          onPlace={handlePlace}
+        />
+      )}
 
       {pending && tab === 'corners' && (
         <PendingCornerForm
@@ -663,6 +882,10 @@ function CircuitDetail({ circuit }: { circuit: Circuit }) {
             No sectors yet — click on the track to place sector trigger points.
           </p>
         )
+      )}
+
+      {tab === 'knowledge' && (
+        <KnowledgeTab circuit={circuit} />
       )}
     </div>
   )
@@ -806,20 +1029,11 @@ export function AdminCircuitsPage() {
           onCreated={(id) => { setSelectedId(id); setShowNewModal(false) }}
         />
       )}
-      {/* Header */}
-      <div className="border-b border-[#1e1e2e] px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate({ to: '/' })}
-            className="text-[#6b7280] hover:text-white transition-colors text-sm"
-          >
-            ← Back
-          </button>
-          <span className="text-[#1e1e2e]">|</span>
-          <h1 className="text-sm font-semibold text-white">Circuit Editor</h1>
-        </div>
-        <span className="text-xs text-[#4b5563] bg-[#1e1e2e] px-2 py-1 rounded">Admin</span>
-      </div>
+      <AppHeader
+        subtitle="Circuit Editor"
+        navItems={[{ label: 'Users', to: '/admin/users' }]}
+        rightAction={{ label: 'Dashboard', onClick: () => navigate({ to: '/' }) }}
+      />
 
       <div className="flex h-[calc(100vh-57px)]">
         {/* Circuit list sidebar */}

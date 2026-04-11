@@ -244,12 +244,30 @@ def parse_telemetry_file(
             base_time = base_time.replace(tzinfo=timezone.utc)
 
         # ------------------------------------------------------------------
-        # 7. Update session status → processing
+        # 7. Update session status → processing; backfill session_date from
+        #    the first frame wall_time if the user didn't set one manually
         # ------------------------------------------------------------------
-        cur.execute(
-            "UPDATE sessions SET status = 'processing' WHERE id = %s",
-            (session_id,),
-        )
+        recording_date = None
+        for f in frames:
+            if f.wall_time is not None:
+                recording_date = f.wall_time.date()
+                break
+
+        if recording_date is not None:
+            cur.execute(
+                """
+                UPDATE sessions
+                SET status = 'processing',
+                    session_date = COALESCE(session_date, %s)
+                WHERE id = %s
+                """,
+                (recording_date, session_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE sessions SET status = 'processing' WHERE id = %s",
+                (session_id,),
+            )
         conn.commit()
 
         # ------------------------------------------------------------------

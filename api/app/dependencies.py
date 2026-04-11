@@ -54,3 +54,15 @@ async def require_admin(
             detail="Admin privileges required",
         )
     return current_user
+
+
+async def require_coach(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Require that the current user has the 'coach' or 'admin' role."""
+    if current_user["role"] not in ("coach", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Coach privileges required",
+        )
+    return current_user

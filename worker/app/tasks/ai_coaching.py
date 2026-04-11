@@ -6,6 +6,7 @@ import json
 import math
 import os
 import pathlib
+import re
 import sys
 
 import structlog
@@ -90,13 +91,24 @@ def generate_coaching_insights_task(self, session_id: str, job_id: str) -> dict:
         cur = conn.cursor()
 
         # ------------------------------------------------------------------
-        # 1. Update job → running
+        # 1. Update job → running; read input_params
         # ------------------------------------------------------------------
         cur.execute(
-            "UPDATE analysis_jobs SET status = 'running', started_at = now() WHERE id = %s",
+            "UPDATE analysis_jobs SET status = 'running', started_at = now() WHERE id = %s RETURNING input_params",
             (job_id,),
         )
+        job_row = cur.fetchone()
         conn.commit()
+
+        input_params: dict = {}
+        if job_row and job_row[0]:
+            raw = job_row[0]
+            if isinstance(raw, str):
+                input_params = json.loads(raw)
+            elif isinstance(raw, dict):
+                input_params = raw
+
+        compare_lap_number: int | None = input_params.get("compare_lap_number")
 
         # ------------------------------------------------------------------
         # 2. Check ANTHROPIC_API_KEY
@@ -184,6 +196,24 @@ def generate_coaching_insights_task(self, session_id: str, job_id: str) -> dict:
             raise ValueError("No valid laps found for this session")
 
         # ------------------------------------------------------------------
+        # 4b. If compare_lap_number specified, restrict to compare lap only
+        # ------------------------------------------------------------------
+        # The ideal lap is the theoretical fastest (best sector compilation).
+        # We compare only the user-selected lap against it — no need for the
+        # actual best lap in the lap list.
+        compare_lap_obj: dict | None = None
+        if compare_lap_number is not None:
+            compare_lap_obj = next((l for l in laps if l["lap_number"] == compare_lap_number), None)
+            if compare_lap_obj is None:
+                raise ValueError(f"compare_lap_number {compare_lap_number} not found in valid laps")
+            laps = [compare_lap_obj]
+            logger.info(
+                "ai_coaching_laps_filtered",
+                session_id=session_id,
+                compare_lap=compare_lap_number,
+            )
+
+        # ------------------------------------------------------------------
         # 5. Fetch ideal_lap — fail fast if missing
         # ------------------------------------------------------------------
         cur.execute(
@@ -257,11 +287,20 @@ def generate_coaching_insights_task(self, session_id: str, job_id: str) -> dict:
         ideal_sector_time_map: dict[int, int] = {}
         ideal_entry_speed_map: dict[int, float | None] = {}
         ideal_exit_speed_map: dict[int, float | None] = {}
+        # Map sector_number → lap_number of the lap that sourced the ideal sector
+        ideal_source_lap_map: dict[int, int | None] = {}
         for src in sector_sources:
             sn = src.get("sector_number")
             if sn is None:
                 continue
             ideal_sector_time_map[sn] = src.get("sector_time_ms", 0)
+            # Resolve lap_id → lap_number so prompt can identify the source lap
+            src_lap_id = src.get("lap_id")
+            src_lap_num = None
+            if src_lap_id:
+                src_lap = next((l for l in laps if str(l["id"]) == str(src_lap_id)), None)
+                src_lap_num = src_lap["lap_number"] if src_lap else None
+            ideal_source_lap_map[sn] = src_lap_num
 
         # Fetch ideal entry/exit speeds from lap_sectors for the ideal source laps
         for src in sector_sources:
@@ -299,30 +338,25 @@ def generate_coaching_insights_task(self, session_id: str, job_id: str) -> dict:
             if ideal_time is None or ideal_time == 0:
                 continue
 
-            # Average delta across all laps for this sector
-            avg_delta_ms = sum(e["sector_time_ms"] - ideal_time for e in entries) / len(entries)
-
-            # Also note the worst single-lap delta for context
-            worst_entry = max(entries, key=lambda e: e["sector_time_ms"] - ideal_time)
-            worst_lap_info = next((l for l in laps if l["id"] == worst_entry["lap_id"]), None)
-
-            # Driver's best sector time for reference
-            best_entry = min(entries, key=lambda e: e["sector_time_ms"])
+            # With a single compare lap, delta is just that lap vs ideal
+            compare_entry = entries[0]
+            delta_ms = compare_entry["sector_time_ms"] - ideal_time
+            compare_lap_info = next((l for l in laps if l["id"] == compare_entry["lap_id"]), None)
 
             sector_deltas.append({
                 "sector_number": sn,
-                "driver_best_ms": best_entry["sector_time_ms"],
+                "driver_best_ms": compare_entry["sector_time_ms"],
                 "ideal_sector_ms": ideal_time,
-                "avg_delta_ms": round(avg_delta_ms),
-                "delta_ms": round(avg_delta_ms),  # used by prompt builder
-                "worst_lap_delta_ms": worst_entry["sector_time_ms"] - ideal_time,
-                "worst_lap_number": worst_lap_info["lap_number"] if worst_lap_info else None,
-                "lap_count": len(entries),
-                "entry_speed_kph": best_entry.get("entry_speed_kph"),
-                "exit_speed_kph": best_entry.get("exit_speed_kph"),
+                "avg_delta_ms": round(delta_ms),
+                "delta_ms": round(delta_ms),
+                "compare_lap_number": compare_lap_info["lap_number"] if compare_lap_info else compare_lap_number,
+                "lap_count": 1,
+                "entry_speed_kph": compare_entry.get("entry_speed_kph"),
+                "exit_speed_kph": compare_entry.get("exit_speed_kph"),
                 "ideal_entry_speed_kph": ideal_entry_speed_map.get(sn),
                 "ideal_exit_speed_kph": ideal_exit_speed_map.get(sn),
-                "best_lap_id": best_entry["lap_id"],
+                "best_lap_id": compare_entry["lap_id"],
+                "ideal_source_lap_number": ideal_source_lap_map.get(sn),
             })
 
         # Sort by average delta descending — most time lost first
@@ -528,9 +562,10 @@ def generate_coaching_insights_task(self, session_id: str, job_id: str) -> dict:
                     # ----------------------------------------------------------
                     braking_zone = []
                     brake_values = [
-                        s.get("brake_pct") or 0.0 for s in sector_samples
+                        _norm(s.get("brake_pct"), brk_min, brk_max) or 0.0
+                        for s in sector_samples
                     ]
-                    if max(brake_values) > 5.0:  # only if meaningful braking exists
+                    if max(brake_values) > 15.0:  # only if meaningful braking exists (above noise floor)
                         peak_idx = brake_values.index(max(brake_values))
                         # Window: up to 15 samples before peak (entry) and 10 after (trail)
                         bz_start = max(0, peak_idx - 15)
@@ -562,9 +597,14 @@ def generate_coaching_insights_task(self, session_id: str, job_id: str) -> dict:
             ws["telemetry_window"] = telemetry_window
 
         # ------------------------------------------------------------------
-        # 10. Build the prompt
+        # 10. Build the prompt and pre-compute corner classifications
         # ------------------------------------------------------------------
-        from app.services.coaching_prompt import build_coaching_prompt  # type: ignore
+        from app.services.coaching_prompt import (  # type: ignore
+            build_coaching_prompt,
+            classify_corners,
+            format_corner_classifications,
+            format_corner_knowledge,
+        )
         from app.services.claude_client import ClaudeClient  # type: ignore
 
         prompt_data = build_coaching_prompt(
@@ -579,10 +619,78 @@ def generate_coaching_insights_task(self, session_id: str, job_id: str) -> dict:
         )
 
         # ------------------------------------------------------------------
-        # 11. Call Claude
+        # 10b. Fetch circuit corner knowledge
+        # ------------------------------------------------------------------
+        corner_knowledge: list[dict] = []
+        if circuit.get("id"):
+            cur.execute(
+                """
+                SELECT id, corner_number, typical_phase_of_interest,
+                       known_handling_tendency, correct_technique,
+                       incorrect_recommendations, coaching_notes, source
+                FROM circuit_corner_knowledge
+                WHERE circuit_id = %s
+                ORDER BY COALESCE(corner_number, 0), created_at
+                """,
+                (circuit["id"],),
+            )
+            corner_knowledge = [
+                {
+                    "id": str(r[0]),
+                    "corner_number": r[1],
+                    "typical_phase_of_interest": r[2],
+                    "known_handling_tendency": r[3],
+                    "correct_technique": r[4],
+                    "incorrect_recommendations": r[5] or [],
+                    "coaching_notes": r[6],
+                    "source": r[7],
+                }
+                for r in cur.fetchall()
+            ]
+            logger.info(
+                "ai_coaching_knowledge_fetched",
+                session_id=session_id,
+                knowledge_count=len(corner_knowledge),
+            )
+
+        classifications = classify_corners(
+            worst_sectors=worst_3,
+            circuit_corners=circuit_corners,
+            ideal_lap=ideal_lap,
+            lap_sectors=lap_sectors,
+        )
+        corner_classifications_text = format_corner_classifications(classifications)
+        knowledge_block = format_corner_knowledge(corner_knowledge, circuit_corners)
+
+        # Prepend knowledge constraints to Call 1 user message
+        if knowledge_block:
+            corner_classifications_text = knowledge_block + "\n\n" + corner_classifications_text
+
+        logger.info(
+            "ai_coaching_classifications_built",
+            session_id=session_id,
+            corner_count=len(classifications),
+            has_knowledge=bool(knowledge_block),
+            windows=[
+                {
+                    "corner": c["corner_name"],
+                    "start": c.get("window_start_m"),
+                    "end": c.get("window_end_m"),
+                    "compare_lap": c.get("compare_lap_number"),
+                }
+                for c in classifications
+            ],
+        )
+
+        # ------------------------------------------------------------------
+        # 11. Call Claude (two-call pipeline)
         # ------------------------------------------------------------------
         claude = ClaudeClient(api_key=api_key)
-        insights, prompt_tokens, completion_tokens = claude.generate_coaching_insights(prompt_data)
+        insights, prompt_tokens, completion_tokens = claude.generate_coaching_insights(
+            prompt_data,
+            corner_classifications_text=corner_classifications_text,
+            knowledge_constraint_text=knowledge_block or None,
+        )
 
         logger.info(
             "ai_coaching_claude_done",
@@ -595,24 +703,82 @@ def generate_coaching_insights_task(self, session_id: str, job_id: str) -> dict:
         # ------------------------------------------------------------------
         # 12. Insert insights into coaching_insights table
         # ------------------------------------------------------------------
+        # Build a distance lookup keyed by corner_name (exact, lowercase).
+        # Claude returns corner_name verbatim from the data so this is reliable.
+        corner_distance_lookup: dict[str, tuple[float | None, float | None]] = {
+            cls["corner_name"].lower(): (cls.get("window_start_m"), cls.get("window_end_m"))
+            for cls in classifications
+        }
+
+        def _resolve_distances(insight_dict: dict) -> tuple[float | None, float | None]:
+            """Resolve distances from corner_name field Claude returns."""
+            cn = (insight_dict.get("corner_name") or "").lower().strip()
+            if cn and cn in corner_distance_lookup:
+                return corner_distance_lookup[cn]
+            # Fallback: scan insight text for any known corner name (longest first)
+            text_lower = insight_dict.get("insight_text", "").lower()
+            for key in sorted(corner_distance_lookup.keys(), key=len, reverse=True):
+                if re.search(r'\b' + re.escape(key) + r'\b', text_lower):
+                    return corner_distance_lookup[key]
+            # Last resort: worst (first) classification's window
+            if classifications:
+                first = classifications[0]
+                return first.get("window_start_m"), first.get("window_end_m")
+            return None, None
+
         insight_count = 0
         for insight in insights:
+            # Guard against Claude returning strings instead of objects
+            if not isinstance(insight, dict):
+                logger.warning("ai_coaching_insight_not_dict", insight=str(insight)[:200])
+                continue
             category = insight.get("category", "general")
             insight_text = insight.get("insight_text", "")
+            # Strip any disclaimer Claude adds about distances
+            insight_text = re.sub(
+                r"\s*[\(\[]?[Aa]nalysis window[^)\]]*[\)\]]?\.?",
+                "",
+                insight_text,
+            ).strip()
+            insight_text = re.sub(
+                r"\s*[\(\[]?[Dd]istance[^)\]]*(?:not provided|UNKNOWN|unavailable)[^)\]]*[\)\]]?\.?",
+                "",
+                insight_text,
+            ).strip()
             confidence = insight.get("confidence", 0.5)
-            distance_m_start = insight.get("distance_m_start")
-            distance_m_end = insight.get("distance_m_end")
+            distance_m_start, distance_m_end = _resolve_distances(insight)
+            logger.info(
+                "ai_coaching_insight_distances",
+                corner_name=insight.get("corner_name"),
+                resolved_start=distance_m_start,
+                resolved_end=distance_m_end,
+                lookup_keys=list(corner_distance_lookup.keys()),
+            )
+
+            # Resolve lap_number from classification data (always the compare lap).
+            cn = (insight.get("corner_name") or "").lower().strip()
+            cls_match = next((c for c in classifications if c["corner_name"].lower() == cn), None)
+            insight_lap_number = (
+                cls_match.get("compare_lap_number") if cls_match else compare_lap_number
+            )
+            insight_lap_id = None
+            if insight_lap_number is not None:
+                lap_match = next((l for l in laps if l["lap_number"] == insight_lap_number), None)
+                if lap_match:
+                    insight_lap_id = lap_match["id"]
 
             cur.execute(
                 """
                 INSERT INTO coaching_insights
-                    (session_id, lap_id, analysis_job_id, category, insight_text,
+                    (session_id, lap_id, lap_number, analysis_job_id, category, insight_text,
                      confidence, distance_m_start, distance_m_end,
                      model_version, prompt_tokens, completion_tokens)
-                VALUES (%s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     session_id,
+                    insight_lap_id,
+                    insight_lap_number,
                     job_id,
                     category,
                     insight_text,

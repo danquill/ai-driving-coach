@@ -73,6 +73,13 @@ export function formatDelta(ms: number): string {
   return `${sign}${seconds.toFixed(3)}`
 }
 
+/**
+ * Formats a session date string as "Jan 5, '25"
+ */
+export function formatSessionDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+}
+
 // ─── Color scales ─────────────────────────────────────────────────────────────
 
 const SPEED_SCALE = chroma.scale(['#0080ff', '#00ff80', '#ffff00', '#ff4000'])

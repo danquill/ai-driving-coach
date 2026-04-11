@@ -34,6 +34,7 @@ COPY migrations/ ./migrations/
 
 # Copy application code
 COPY app/ ./app/
+COPY tests/ ./tests/
 
 # Change ownership to non-root user
 RUN chown -R appuser:appgroup /app

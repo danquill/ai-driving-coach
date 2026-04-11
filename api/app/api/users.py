@@ -1,15 +1,24 @@
-"""User routes: GET /me, PATCH /me."""
+"""User routes: GET /me, PATCH /me, and admin user management."""
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from typing import Optional
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_admin
 from app.schemas.user import UpdateUserRequest, UserResponse
 from app.services.auth import hash_password, verify_password
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+class AdminUpdateUserRequest(BaseModel):
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 @router.get("/me", response_model=UserResponse)
@@ -91,3 +100,70 @@ async def update_me(
         role=updated["role"],
         created_at=updated["created_at"],
     )
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("", response_model=list[UserResponse])
+async def list_users(
+    _admin: dict = Depends(require_admin),
+    db=Depends(get_db),
+) -> list[UserResponse]:
+    """List all users. Admin only."""
+    rows = await db.fetch(
+        "SELECT id, email, display_name, role, is_active, created_at FROM users ORDER BY created_at DESC"
+    )
+    return [UserResponse(**dict(r)) for r in rows]
+
+
+@router.patch("/{user_id}", response_model=UserResponse)
+async def admin_update_user(
+    user_id: uuid.UUID,
+    body: AdminUpdateUserRequest,
+    current_admin: dict = Depends(require_admin),
+    db=Depends(get_db),
+) -> UserResponse:
+    """Update a user's role or active status. Admin only."""
+    _VALID_ROLES = {"driver", "coach", "admin"}
+    if body.role is not None and body.role not in _VALID_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role. Must be one of: {', '.join(sorted(_VALID_ROLES))}",
+        )
+
+    # Prevent admin from demoting themselves
+    if str(user_id) == str(current_admin["id"]) and body.role is not None and body.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot change your own admin role",
+        )
+
+    fields: list[str] = []
+    values: list = []
+    idx = 1
+
+    if body.role is not None:
+        fields.append(f"role = ${idx}")
+        values.append(body.role)
+        idx += 1
+
+    if body.is_active is not None:
+        fields.append(f"is_active = ${idx}")
+        values.append(body.is_active)
+        idx += 1
+
+    if not fields:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+
+    values.append(user_id)
+    query = f"""
+        UPDATE users SET {', '.join(fields)}
+        WHERE id = ${idx}
+        RETURNING id, email, display_name, role, is_active, created_at
+    """
+    row = await db.fetchrow(query, *values)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return UserResponse(**dict(row))

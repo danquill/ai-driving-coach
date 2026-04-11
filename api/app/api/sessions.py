@@ -70,9 +70,20 @@ async def list_sessions(
 ):
     rows = await db.fetch(
         """
-        SELECT * FROM sessions
-        WHERE owner_id = $1 AND status != 'deleted'
-        ORDER BY created_at DESC
+        SELECT s.*,
+               c.name AS circuit_name,
+               (SELECT MIN(l.lap_time_ms)
+                FROM laps l
+                WHERE l.session_id = s.id
+                  AND l.is_valid = true
+                  AND l.is_outlap = false
+                  AND l.is_inlap = false
+                  AND l.lap_time_ms IS NOT NULL
+               ) AS best_lap_time_ms
+        FROM sessions s
+        LEFT JOIN circuits c ON c.id = s.circuit_id
+        WHERE s.owner_id = $1 AND s.status != 'deleted'
+        ORDER BY s.created_at DESC
         LIMIT $2 OFFSET $3
         """,
         uuid.UUID(str(current_user["id"])),

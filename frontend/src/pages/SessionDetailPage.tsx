@@ -4,7 +4,7 @@ import { useParams, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getSession } from '../api/sessions'
 import { listLaps, getIdealLap, getOverlay } from '../api/laps'
-import { triggerAnalysis, getInsights, deleteInsight, deleteAllInsights } from '../api/analysis'
+import { triggerAnalysis, getInsights, deleteInsight, deleteAllInsights, submitInsightFeedback } from '../api/analysis'
 import { getCircuit } from '../api/circuits'
 import { useJobPoller } from '../hooks/useJobPoller'
 import { useTelemetryOverlay } from '../hooks/useTelemetryOverlay'
@@ -558,6 +558,7 @@ const INSIGHT_CATEGORY_COLORS: Record<string, string> = {
 
 function InsightCard({
   insight,
+  sessionId,
   onJumpTo,
   onDelete,
   circuit,
@@ -567,6 +568,7 @@ function InsightCard({
   mapReady,
 }: {
   insight: CoachingInsight
+  sessionId: string
   onJumpTo?: (distanceM: number) => void
   onDelete?: (id: string) => void
   circuit: Circuit | null
@@ -578,9 +580,38 @@ function InsightCard({
   const catStyle = INSIGHT_CATEGORY_COLORS[insight.category.toLowerCase()] ?? INSIGHT_CATEGORY_COLORS.general
   const confidencePct = insight.confidence != null ? Math.round(insight.confidence * 100) : null
   const hasMap = insight.distance_m_start != null
+  const user = useStore((s) => s.user)
+  const isCoach = user?.role === 'coach' || user?.role === 'admin'
+
+  const [feedbackState, setFeedbackState] = useState<'none' | 'good' | 'bad'>(
+    insight.feedback ?? 'none'
+  )
+  const [showCorrectionForm, setShowCorrectionForm] = useState(false)
+  const [correctionNote, setCorrectionNote] = useState('')
+  const [submittedNote, setSubmittedNote] = useState(insight.feedback_note ?? '')
+
+  const feedbackMutation = useMutation({
+    mutationFn: (data: { feedback: 'good' | 'bad'; feedback_note?: string }) =>
+      submitInsightFeedback(sessionId, insight.id, data),
+    onSuccess: (_, vars) => {
+      setFeedbackState(vars.feedback)
+      if (vars.feedback === 'bad' && vars.feedback_note) {
+        setSubmittedNote(vars.feedback_note)
+      }
+      setShowCorrectionForm(false)
+      setCorrectionNote('')
+    },
+  })
+
+  const borderClass =
+    feedbackState === 'good'
+      ? 'border border-[#00e676]/30'
+      : feedbackState === 'bad'
+        ? 'border border-[#ff5252]/30'
+        : ''
 
   return (
-    <Card variant="inset" className="p-4">
+    <Card variant="inset" className={`p-4 ${borderClass}`}>
       {/* Header row: category + distance + delete */}
       <div className="flex items-center gap-2 flex-wrap mb-2">
         <span className={`text-xs px-2 py-0.5 rounded border uppercase tracking-wide font-medium ${catStyle}`}>
@@ -595,15 +626,50 @@ function InsightCard({
             @{insight.distance_m_start.toFixed(0)}m ↗
           </button>
         )}
-        <button
-          onClick={() => onDelete?.(insight.id)}
-          title="Delete insight"
-          className="ml-auto text-[#6b7280] hover:text-[#ff5252] transition-colors p-1 rounded"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
+        {/* Feedback buttons — coach/admin only */}
+        <div className="ml-auto flex items-center gap-1">
+          {isCoach && (
+            <>
+              <button
+                onClick={() => feedbackMutation.mutate({ feedback: 'good' })}
+                title="Good recommendation"
+                disabled={feedbackMutation.isPending}
+                className={`p-1 rounded transition-colors ${
+                  feedbackState === 'good'
+                    ? 'text-[#00e676]'
+                    : 'text-[#6b7280] hover:text-[#00e676]'
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" fill={feedbackState === 'good' ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setShowCorrectionForm(true)}
+                title="Flag bad recommendation"
+                disabled={feedbackMutation.isPending}
+                className={`p-1 rounded transition-colors ${
+                  feedbackState === 'bad'
+                    ? 'text-[#ff5252]'
+                    : 'text-[#6b7280] hover:text-[#ff5252]'
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" fill={feedbackState === 'bad' ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018c.163 0 .326.02.485.06L17 4m-7 10v2a2 2 0 002 2h.095c.5 0 .905-.405.905-.905 0-.714.211-1.412.608-2.006L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />
+                </svg>
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => onDelete?.(insight.id)}
+            title="Delete insight"
+            className="text-[#6b7280] hover:text-[#ff5252] transition-colors p-1 rounded"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Two-column: text left, map right */}
@@ -620,6 +686,47 @@ function InsightCard({
                 />
               </div>
               <span className="text-xs font-mono text-[#6b7280]">{confidencePct}%</span>
+            </div>
+          )}
+          {/* Submitted correction note */}
+          {isCoach && feedbackState === 'bad' && submittedNote && !showCorrectionForm && (
+            <p className="text-xs text-[#ff5252]/80 italic border-t border-[#1e1e2e] pt-2">
+              Coach note: "{submittedNote}"
+            </p>
+          )}
+          {/* Correction form */}
+          {isCoach && showCorrectionForm && (
+            <div className="space-y-2 border-t border-[#1e1e2e] pt-3">
+              <p className="text-xs text-[#6b7280]">What should the coach have said instead?</p>
+              <input
+                type="text"
+                value={correctionNote}
+                onChange={(e) => setCorrectionNote(e.target.value)}
+                placeholder="e.g. The corner needs a later turn-in, not brush braking"
+                className="w-full text-xs bg-[#0d0d14] border border-[#1e1e2e] rounded px-2 py-1.5 text-[#d1d5db] placeholder-[#4b5563] focus:outline-none focus:border-[#457b9d]"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && correctionNote.trim()) {
+                    feedbackMutation.mutate({ feedback: 'bad', feedback_note: correctionNote.trim() })
+                  }
+                }}
+              />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={!correctionNote.trim() || feedbackMutation.isPending}
+                  onClick={() => feedbackMutation.mutate({ feedback: 'bad', feedback_note: correctionNote.trim() })}
+                >
+                  Submit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => { setShowCorrectionForm(false); setCorrectionNote('') }}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -659,6 +766,11 @@ function InsightsTab({ sessionId }: { sessionId: string }) {
     queryFn: () => getIdealLap(sessionId),
     retry: false,
   })
+  const { data: laps } = useQuery<LapDetail[]>({
+    queryKey: ['laps', sessionId],
+    queryFn: () => listLaps(sessionId),
+  })
+  const [compareLapNumber, setCompareLapNumber] = useState<number | null>(null)
 
   const { data: session } = useQuery({ queryKey: ['session', sessionId], queryFn: () => getSession(sessionId) })
   const { data: circuit } = useQuery({
@@ -713,7 +825,11 @@ function InsightsTab({ sessionId }: { sessionId: string }) {
   })
 
   const triggerMutation = useMutation({
-    mutationFn: () => triggerAnalysis(sessionId, 'ai_coaching'),
+    mutationFn: () => triggerAnalysis(
+      sessionId,
+      'ai_coaching',
+      compareLapNumber !== null ? { compare_lap_number: compareLapNumber } : undefined,
+    ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sessions', sessionId, 'jobs'] })
     },
@@ -770,15 +886,39 @@ function InsightsTab({ sessionId }: { sessionId: string }) {
                 Clear all
               </Button>
             )}
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!hasPrerequisite || isRunning || triggerMutation.isPending}
-              loading={triggerMutation.isPending || isRunning}
-              onClick={() => triggerMutation.mutate()}
-            >
-              {isRunning ? 'Generating…' : 'Generate Insights'}
-            </Button>
+            {(() => {
+              const bestLap = laps?.reduce((a, b) =>
+                (a.lap_time_ms ?? Infinity) < (b.lap_time_ms ?? Infinity) ? a : b
+              )
+              const otherLaps = laps?.filter(l => l.lap_number !== bestLap?.lap_number) ?? []
+              const noLapSelected = compareLapNumber === null
+              return (
+                <>
+                  <select
+                    className="text-xs bg-[#1e2028] border border-[#2d3748] text-white rounded px-2 py-1.5 disabled:opacity-50"
+                    value={compareLapNumber ?? ''}
+                    disabled={isRunning || !laps || otherLaps.length === 0}
+                    onChange={e => setCompareLapNumber(e.target.value ? Number(e.target.value) : null)}
+                  >
+                    <option value="">Select lap to analyse</option>
+                    {otherLaps.map(l => (
+                      <option key={l.lap_number} value={l.lap_number}>
+                        Lap {l.lap_number} — {l.lap_time_ms ? (l.lap_time_ms / 1000).toFixed(3) + 's' : '?'}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={!hasPrerequisite || isRunning || triggerMutation.isPending || noLapSelected}
+                    loading={triggerMutation.isPending || isRunning}
+                    onClick={() => triggerMutation.mutate()}
+                  >
+                    {isRunning ? 'Generating…' : 'Generate Insights'}
+                  </Button>
+                </>
+              )
+            })()}
           </div>
         </div>
       </div>
@@ -813,6 +953,7 @@ function InsightsTab({ sessionId }: { sessionId: string }) {
           <InsightCard
             key={insight.id}
             insight={insight}
+            sessionId={sessionId}
             onJumpTo={setCursorDistanceM}
             onDelete={(id) => deleteOneMutation.mutate(id)}
             circuit={circuit ?? null}
