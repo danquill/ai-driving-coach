@@ -222,6 +222,7 @@ function InvitesPanel() {
             {filter !== 'all' ? `No ${filter} invite codes.` : 'No invite codes yet. Generate one above.'}
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="text-left text-xs text-[#6b7280] uppercase tracking-wider">
@@ -242,6 +243,7 @@ function InvitesPanel() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -279,7 +281,7 @@ export function AdminPlatformPage() {
         rightAction={{ label: 'Dashboard', onClick: () => navigate({ to: '/' }) }}
       />
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
+      <main className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="mb-6">
           <h2 className="text-2xl font-bold text-white">Platform Settings</h2>
           <p className="text-sm text-[#6b7280] mt-1">Beta access, invite codes, and platform configuration</p>

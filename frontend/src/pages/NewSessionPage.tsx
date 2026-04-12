@@ -229,7 +229,7 @@ export function NewSessionPage() {
     <div className="min-h-screen bg-[#0a0a0f]">
       {/* Nav */}
       <header className="border-b border-[#1e1e2e] bg-[#12121a]">
-        <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="max-w-3xl mx-auto px-4 md:px-6 h-14 flex items-center justify-between">
           <button
             onClick={() => navigate({ to: '/' })}
             className="text-xl font-black tracking-[0.2em] text-white hover:text-[#e63946] transition-colors"
@@ -240,7 +240,7 @@ export function NewSessionPage() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-6 py-10">
+      <main className="max-w-3xl mx-auto px-4 md:px-6 py-6 md:py-10">
         {/* Progress steps */}
         <div className="flex items-center gap-0 mb-10">
           {STEPS.map((s, i) => (

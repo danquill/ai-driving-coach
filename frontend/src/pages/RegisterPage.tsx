@@ -62,7 +62,7 @@ export function RegisterPage() {
           </p>
         </div>
 
-        <div className="bg-gradient-to-b from-[#16162a] to-[#12121a] border border-[#1e1e2e] rounded-xl p-8 shadow-2xl shadow-black/50">
+        <div className="bg-gradient-to-b from-[#16162a] to-[#12121a] border border-[#1e1e2e] rounded-xl p-6 md:p-8 shadow-2xl shadow-black/50">
           <div className="flex items-center gap-2 mb-6">
             <h2 className="text-lg font-semibold text-white">Create Account</h2>
             {betaMode && (

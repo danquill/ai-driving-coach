@@ -12,6 +12,7 @@ interface InsightMiniMapProps {
   distanceMEnd?: number
   width?: number
   height?: number
+  fullWidth?: boolean
 }
 
 /**
@@ -29,6 +30,7 @@ export function InsightMiniMap({
   distanceMEnd,
   width = 240,
   height = 160,
+  fullWidth = false,
 }: InsightMiniMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [snapshot, setSnapshot] = useState<string | null>(null)
@@ -207,9 +209,12 @@ export function InsightMiniMap({
     }
   }, [hasData, snapshot, failed]) // re-run when data arrives; stop once captured
 
+  const sizeStyle = fullWidth ? { height } : { width, height }
+  const shrinkClass = fullWidth ? 'w-full' : 'flex-shrink-0'
+
   if (snapshot) {
     return (
-      <div className="rounded overflow-hidden border border-[#1e1e2e] flex-shrink-0" style={{ width, height }}>
+      <div className={`rounded overflow-hidden border border-[#1e1e2e] ${shrinkClass}`} style={sizeStyle}>
         <img src={snapshot} alt="Track position" className="w-full h-full object-cover" />
       </div>
     )
@@ -218,8 +223,8 @@ export function InsightMiniMap({
   if (failed) {
     return (
       <div
-        className="rounded border border-[#1e1e2e] flex-shrink-0 flex items-center justify-center bg-[#0d0d14] text-[#4b5563] text-xs"
-        style={{ width, height }}
+        className={`rounded border border-[#1e1e2e] ${shrinkClass} flex items-center justify-center bg-[#0d0d14] text-[#4b5563] text-xs`}
+        style={sizeStyle}
       >
         No map data
       </div>
@@ -229,7 +234,7 @@ export function InsightMiniMap({
   // Skeleton shown while waiting for data or rendering
   // Container must be visible (not opacity-0) for MapLibre to size correctly
   return (
-    <div className="relative flex-shrink-0 rounded overflow-hidden border border-[#1e1e2e]" style={{ width, height }}>
+    <div className={`relative ${shrinkClass} rounded overflow-hidden border border-[#1e1e2e]`} style={sizeStyle}>
       <div
         ref={containerRef}
         className="absolute inset-0"

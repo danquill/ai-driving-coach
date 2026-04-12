@@ -124,9 +124,9 @@ export function AdminUsersPage() {
         rightAction={{ label: 'Dashboard', onClick: () => navigate({ to: '/' }) }}
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div>
             <h2 className="text-2xl font-bold text-white">Users</h2>
             <p className="text-sm text-[#6b7280] mt-1">Manage roles and access</p>
@@ -160,6 +160,7 @@ export function AdminUsersPage() {
               {search ? 'No users match your search.' : 'No users found.'}
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="text-left text-xs text-[#6b7280] uppercase tracking-wider">
@@ -184,6 +185,7 @@ export function AdminUsersPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 

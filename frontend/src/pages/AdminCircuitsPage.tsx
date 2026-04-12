@@ -536,6 +536,7 @@ function KnowledgeTab({ circuit }: { circuit: Circuit }) {
         <p className="text-sm text-[#4b5563] text-center py-4">Loading…</p>
       ) : entries.length > 0 ? (
         <div className="bg-[#0d0d14] rounded-lg border border-[#1e1e2e] overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-[#6b7280] uppercase tracking-wide">
@@ -593,6 +594,7 @@ function KnowledgeTab({ circuit }: { circuit: Circuit }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       ) : (
         <p className="text-sm text-[#4b5563] text-center py-4">
@@ -811,6 +813,7 @@ function CircuitDetail({ circuit }: { circuit: Circuit }) {
       {tab === 'corners' && (
         corners.length > 0 ? (
           <div className="bg-[#0d0d14] rounded-lg border border-[#1e1e2e] overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-[#6b7280] uppercase tracking-wide">
@@ -832,6 +835,7 @@ function CircuitDetail({ circuit }: { circuit: Circuit }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         ) : (
           <p className="text-sm text-[#4b5563] text-center py-4">
@@ -843,6 +847,7 @@ function CircuitDetail({ circuit }: { circuit: Circuit }) {
       {tab === 'sectors' && (
         sectors.length > 0 ? (
           <div className="bg-[#0d0d14] rounded-lg border border-[#1e1e2e] overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-[#6b7280] uppercase tracking-wide">
@@ -874,6 +879,7 @@ function CircuitDetail({ circuit }: { circuit: Circuit }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         ) : (
           <p className="text-sm text-[#4b5563] text-center py-4">
@@ -1036,9 +1042,9 @@ export function AdminCircuitsPage() {
         rightAction={{ label: 'Dashboard', onClick: () => navigate({ to: '/' }) }}
       />
 
-      <div className="flex h-[calc(100vh-57px)]">
+      <div className="flex flex-col md:flex-row h-auto md:h-[calc(100vh-57px)]">
         {/* Circuit list sidebar */}
-        <div className="w-56 border-r border-[#1e1e2e] overflow-y-auto flex-shrink-0 flex flex-col">
+        <div className="w-full md:w-56 border-b md:border-b-0 md:border-r border-[#1e1e2e] overflow-y-auto flex-shrink-0 flex flex-col md:max-h-full max-h-48">
           <div className="p-3 flex-1 space-y-1">
             {circuits.map((c) => (
               <div key={c.id} className="group relative">
@@ -1099,7 +1105,7 @@ export function AdminCircuitsPage() {
         </div>
 
         {/* Detail panel */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {selected ? (
             <>
               <div className="mb-4">

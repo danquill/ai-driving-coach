@@ -102,7 +102,7 @@ function OverviewTab({ sessionId }: { sessionId: string }) {
       <Card>
         <CardHeader>
           <h3 className="text-sm font-semibold text-white uppercase tracking-wide">Analysis Jobs</h3>
-          <div className="flex gap-2">
+          <div className="hidden md:flex gap-2">
             {jobTypes.map((jt) => (
               <Button
                 key={jt}
@@ -117,14 +117,15 @@ function OverviewTab({ sessionId }: { sessionId: string }) {
           </div>
         </CardHeader>
         <CardBody className="p-0">
+          <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-[#1e1e2e]">
                 <th className="text-left text-[#6b7280] uppercase tracking-wide px-5 py-2.5 font-medium">Job</th>
                 <th className="text-left text-[#6b7280] uppercase tracking-wide px-5 py-2.5 font-medium">Status</th>
-                <th className="text-left text-[#6b7280] uppercase tracking-wide px-5 py-2.5 font-medium">Started</th>
-                <th className="text-left text-[#6b7280] uppercase tracking-wide px-5 py-2.5 font-medium">Completed</th>
-                <th className="text-left text-[#6b7280] uppercase tracking-wide px-5 py-2.5 font-medium">Summary</th>
+                <th className="text-left text-[#6b7280] uppercase tracking-wide px-5 py-2.5 font-medium hidden md:table-cell">Started</th>
+                <th className="text-left text-[#6b7280] uppercase tracking-wide px-5 py-2.5 font-medium hidden md:table-cell">Completed</th>
+                <th className="text-left text-[#6b7280] uppercase tracking-wide px-5 py-2.5 font-medium hidden md:table-cell">Summary</th>
               </tr>
             </thead>
             <tbody>
@@ -138,20 +139,20 @@ function OverviewTab({ sessionId }: { sessionId: string }) {
                         <button
                           onClick={() => triggerMutation.mutate(job.job_type)}
                           disabled={triggerMutation.isPending}
-                          className="text-[10px] text-[#457b9d] hover:text-white border border-[#1e1e2e] hover:border-[#457b9d] px-1.5 py-0.5 rounded transition-colors disabled:opacity-40"
+                          className="text-[10px] text-[#457b9d] hover:text-white border border-[#1e1e2e] hover:border-[#457b9d] px-2 py-1 md:px-1.5 md:py-0.5 rounded transition-colors disabled:opacity-40"
                         >
                           {triggerMutation.isPending && triggerMutation.variables === job.job_type ? '…' : 'Rerun'}
                         </button>
                       )}
                     </div>
                   </td>
-                  <td className="px-5 py-3 text-[#6b7280]">
+                  <td className="px-5 py-3 text-[#6b7280] hidden md:table-cell">
                     {job.started_at ? new Date(job.started_at).toLocaleTimeString() : '—'}
                   </td>
-                  <td className="px-5 py-3 text-[#6b7280]">
+                  <td className="px-5 py-3 text-[#6b7280] hidden md:table-cell">
                     {job.completed_at ? new Date(job.completed_at).toLocaleTimeString() : '—'}
                   </td>
-                  <td className="px-5 py-3 text-[#9ca3af] max-w-xs truncate" title={job.error_message ?? undefined}>
+                  <td className="px-5 py-3 text-[#9ca3af] max-w-xs truncate hidden md:table-cell" title={job.error_message ?? undefined}>
                     {job.status === 'failed' ? job.error_message : job.result_summary ?? '—'}
                   </td>
                 </tr>
@@ -163,6 +164,7 @@ function OverviewTab({ sessionId }: { sessionId: string }) {
               )}
             </tbody>
           </table>
+          </div>
         </CardBody>
       </Card>
     </div>
@@ -379,6 +381,7 @@ function AnalysisTab({ sessionId }: { sessionId: string }) {
   }, [overlay, selectedLapNumbers])
 
   const [chartsExpanded, setChartsExpanded] = useState(false)
+  const [lapDrawerOpen, setLapDrawerOpen] = useState(false)
   const [visibleCharts, setVisibleCharts] = useState<Set<ChartPanelKey>>(
     new Set(CHART_PANELS.map((p) => p.key))
   )
@@ -392,67 +395,133 @@ function AnalysisTab({ sessionId }: { sessionId: string }) {
     })
   }
 
-  return (
-    <div className="flex h-full min-h-0">
-      {/* Left sidebar: lap selector + map */}
-      <div className={`flex-shrink-0 border-r border-[#1e1e2e] transition-all duration-300 overflow-y-auto ${chartsExpanded ? 'w-0 overflow-hidden opacity-0 pointer-events-none' : 'w-44'}`}>
-        {/* Lap selector */}
-        <div className="p-3 border-b border-[#1e1e2e]">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-widest">Laps</span>
-            <span className="text-[10px] text-[#4b5563]">{selectedLapNumbers.length}/2</span>
-          </div>
-          {validLaps.length === 0 && (
-            <p className="text-xs text-[#4b5563]">No valid laps</p>
-          )}
-          <div className="space-y-0.5">
-            {validLaps.map((lap) => {
-              const isSelected = selectedLapNumbers.includes(lap.lap_number)
-              const color = isSelected ? lapColorMap[lap.lap_number] : null
-              const canSelect = isSelected || selectedLapNumbers.length < 2
-              return (
-                <button
-                  key={lap.lap_number}
-                  onClick={() => canSelect && toggleLap(lap.lap_number)}
-                  disabled={!canSelect}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left transition-colors ${
-                    isSelected ? 'bg-[#1e1e2e]' : canSelect ? 'hover:bg-[#0d0d14]' : 'opacity-30 cursor-not-allowed'
-                  }`}
-                >
-                  <span
-                    className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: color ?? '#374151' }}
-                  />
-                  <span className="text-xs font-mono text-white flex-1">L{lap.lap_number}</span>
-                  {isSelected && (
-                    <span className="text-[9px] text-[#6b7280] uppercase">
-                      {selectedLapNumbers.indexOf(lap.lap_number) === 0 ? 'REF' : 'CMP'}
-                    </span>
-                  )}
-                  <span className="text-[10px] font-mono text-[#6b7280]">
-                    {lap.lap_time_ms != null ? formatLapTime(lap.lap_time_ms) : '—'}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
+  // Lap list sidebar content (shared between desktop sidebar and mobile drawer)
+  const lapListContent = (
+    <div className="p-3 border-b border-[#1e1e2e]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-widest">Laps</span>
+        <span className="text-[10px] text-[#4b5563]">{selectedLapNumbers.length}/2</span>
+      </div>
+      {validLaps.length === 0 && (
+        <p className="text-xs text-[#4b5563]">No valid laps</p>
+      )}
+      <div className="space-y-0.5">
+        {validLaps.map((lap) => {
+          const isSelected = selectedLapNumbers.includes(lap.lap_number)
+          const color = isSelected ? lapColorMap[lap.lap_number] : null
+          const canSelect = isSelected || selectedLapNumbers.length < 2
+          return (
+            <button
+              key={lap.lap_number}
+              onClick={() => { canSelect && toggleLap(lap.lap_number); setLapDrawerOpen(false) }}
+              disabled={!canSelect}
+              className={`w-full flex items-center gap-2 px-2 py-2 md:py-1.5 rounded text-left transition-colors ${
+                isSelected ? 'bg-[#1e1e2e]' : canSelect ? 'hover:bg-[#0d0d14]' : 'opacity-30 cursor-not-allowed'
+              }`}
+            >
+              <span
+                className="w-2 h-2 rounded-full flex-shrink-0"
+                style={{ backgroundColor: color ?? '#374151' }}
+              />
+              <span className="text-xs font-mono text-white flex-1">L{lap.lap_number}</span>
+              {isSelected && (
+                <span className="text-[9px] text-[#6b7280] uppercase">
+                  {selectedLapNumbers.indexOf(lap.lap_number) === 0 ? 'REF' : 'CMP'}
+                </span>
+              )}
+              <span className="text-[10px] font-mono text-[#6b7280]">
+                {lap.lap_time_ms != null ? formatLapTime(lap.lap_time_ms) : '—'}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 
+  return (
+    <div className="flex h-full min-h-0 relative">
+      {/* Mobile lap drawer overlay */}
+      {lapDrawerOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-black/60"
+          onClick={() => setLapDrawerOpen(false)}
+        />
+      )}
+      <div className={`md:hidden fixed left-0 top-0 bottom-0 z-50 bg-[#12121a] border-r border-[#1e1e2e] overflow-y-auto transition-transform duration-300 w-56 ${lapDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="flex items-center justify-between px-3 pt-3 pb-2 border-b border-[#1e1e2e]">
+          <span className="text-xs font-semibold text-white">Select Laps</span>
+          <button onClick={() => setLapDrawerOpen(false)} className="text-[#6b7280] hover:text-white p-1">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        {lapListContent}
+      </div>
+
+      {/* Desktop left sidebar: lap selector */}
+      <div className={`hidden md:block flex-shrink-0 border-r border-[#1e1e2e] transition-all duration-300 overflow-y-auto ${chartsExpanded ? 'w-0 overflow-hidden opacity-0 pointer-events-none' : 'w-44'}`}>
+        {lapListContent}
       </div>
 
       {/* Right: toolbar + charts */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Toolbar */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-[#1e1e2e] flex-shrink-0">
-          {/* Chart visibility toggles */}
-          <div className="flex items-center gap-1.5 flex-1 flex-wrap">
+        <div className="flex flex-col border-b border-[#1e1e2e] flex-shrink-0">
+          {/* Row 1: controls */}
+          <div className="flex items-center gap-2 px-3 py-2">
+            {/* Mobile: lap selector toggle */}
+            <button
+              onClick={() => setLapDrawerOpen(true)}
+              className="md:hidden flex items-center gap-1.5 text-xs text-[#9ca3af] hover:text-white border border-[#1e1e2e] hover:border-[#374151] bg-[#12121a] hover:bg-[#1e1e2e] px-2.5 py-1.5 rounded transition-colors flex-shrink-0"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              Laps {selectedLapNumbers.length > 0 && `(${selectedLapNumbers.length})`}
+            </button>
+            <div className="flex-1" />
+            <button
+              onClick={() => {
+                const s = uPlot.sync('telemetry-sync')
+                for (const u of s.plots) {
+                  const xs = u.data[0] as number[]
+                  if (xs?.length) u.setScale('x', { min: xs[0], max: xs[xs.length - 1] })
+                }
+              }}
+              className="flex items-center gap-1.5 text-xs text-[#9ca3af] hover:text-white border border-[#1e1e2e] hover:border-[#374151] bg-[#12121a] hover:bg-[#1e1e2e] px-2.5 py-1.5 md:py-1 rounded transition-colors flex-shrink-0"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
+              </svg>
+              Reset zoom
+            </button>
+            <button
+              onClick={() => setChartsExpanded((v) => !v)}
+              title={chartsExpanded ? 'Collapse' : 'Expand'}
+              className="flex items-center gap-1.5 text-xs text-[#9ca3af] hover:text-white border border-[#1e1e2e] hover:border-[#374151] bg-[#12121a] hover:bg-[#1e1e2e] px-2.5 py-1.5 md:py-1 rounded transition-colors flex-shrink-0"
+            >
+              {chartsExpanded ? (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9L4 4m0 0h5m-5 0v5M15 9l5-5m0 0h-5m5 0v5M9 15l-5 5m0 0h5m-5 0v-5M15 15l5 5m0 0h-5m5 0v-5" />
+                </svg>
+              ) : (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
+                </svg>
+              )}
+            </button>
+          </div>
+          {/* Row 2: chart visibility toggles */}
+          <div className="flex items-center gap-1.5 flex-wrap px-3 pb-2 border-t border-[#1e1e2e]">
             {CHART_PANELS.map((panel) => {
               const active = visibleCharts.has(panel.key)
               return (
                 <button
                   key={panel.key}
                   onClick={() => toggleChart(panel.key)}
-                  className={`px-2.5 py-1 text-[11px] rounded border transition-all ${
+                  className={`mt-2 px-2.5 py-1.5 md:py-1 text-[11px] rounded border transition-all ${
                     active
                       ? 'bg-[#457b9d]/20 border-[#457b9d] text-[#457b9d]'
                       : 'bg-transparent border-[#1e1e2e] text-[#6b7280] hover:border-[#2e2e4e] hover:text-[#9ca3af]'
@@ -463,39 +532,8 @@ function AnalysisTab({ sessionId }: { sessionId: string }) {
               )
             })}
           </div>
-          <div className="w-px h-4 bg-[#1e1e2e] flex-shrink-0" />
-          <button
-            onClick={() => {
-              const s = uPlot.sync('telemetry-sync')
-              for (const u of s.plots) {
-                const xs = u.data[0] as number[]
-                if (xs?.length) u.setScale('x', { min: xs[0], max: xs[xs.length - 1] })
-              }
-            }}
-            className="flex items-center gap-1.5 text-xs text-[#9ca3af] hover:text-white border border-[#1e1e2e] hover:border-[#374151] bg-[#12121a] hover:bg-[#1e1e2e] px-2.5 py-1 rounded transition-colors flex-shrink-0"
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
-            </svg>
-            Reset zoom
-          </button>
-          <button
-            onClick={() => setChartsExpanded((v) => !v)}
-            title={chartsExpanded ? 'Collapse' : 'Expand'}
-            className="flex items-center gap-1.5 text-xs text-[#9ca3af] hover:text-white border border-[#1e1e2e] hover:border-[#374151] bg-[#12121a] hover:bg-[#1e1e2e] px-2.5 py-1 rounded transition-colors flex-shrink-0"
-          >
-            {chartsExpanded ? (
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9L4 4m0 0h5m-5 0v5M15 9l5-5m0 0h-5m5 0v5M9 15l-5 5m0 0h5m-5 0v-5M15 15l5 5m0 0h-5m5 0v-5" />
-              </svg>
-            ) : (
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
-              </svg>
-            )}
-          </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-1 md:p-4 space-y-3">
 
           {selectedLapNumbers.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full min-h-[400px]">
@@ -544,9 +582,9 @@ function AnalysisTab({ sessionId }: { sessionId: string }) {
                 />
               )}
               {(visibleCharts.has('traction') || visibleCharts.has('map')) && (
-                <div className="flex gap-3 items-stretch">
+                <div className="flex flex-col md:flex-row gap-3 md:items-stretch">
                   {visibleCharts.has('traction') && (
-                    <div className={visibleCharts.has('map') ? 'flex-1 min-w-0' : 'w-1/2'}>
+                    <div className={visibleCharts.has('map') ? 'md:flex-1 md:min-w-0' : 'md:w-1/2'}>
                       <TractionCircleChart
                         overlay={overlay}
                         selectedLaps={selectedLapNumbers}
@@ -555,7 +593,7 @@ function AnalysisTab({ sessionId }: { sessionId: string }) {
                     </div>
                   )}
                   {visibleCharts.has('map') && (
-                    <div className={visibleCharts.has('traction') ? 'flex-1 min-w-0' : 'w-full'} style={visibleCharts.has('traction') ? undefined : { height: '340px' }}>
+                    <div className={visibleCharts.has('traction') ? 'h-48 md:h-auto md:flex-1 md:min-w-0' : 'w-full h-48 md:h-[340px]'}>
                       <TrackMap
                         circuit={circuit ?? null}
                         lapRows={mapLaps}
@@ -702,8 +740,8 @@ function InsightCard({
         </div>
       </div>
 
-      {/* Two-column: text left, map right */}
-      <div className="flex gap-4">
+      {/* Text above map on mobile, side-by-side on desktop */}
+      <div className="flex flex-col md:flex-row gap-4">
         <div className="flex-1 space-y-2 min-w-0">
           <p className="text-sm text-[#d1d5db] leading-relaxed">{insight.insight_text}</p>
           {confidencePct != null && (
@@ -761,22 +799,26 @@ function InsightCard({
           )}
         </div>
         {hasMap && (
-          mapReady
-            ? <InsightMiniMap
-                circuit={circuit}
-                lapRows={lapRows}
-                channels={channels}
-                lapColorMap={lapColorMap}
-                distanceM={insight.distance_m_start ?? 0}
-                distanceMStart={insight.distance_m_start ?? undefined}
-                distanceMEnd={insight.distance_m_end ?? undefined}
-                width={280}
-                height={200}
-              />
-            : <div
-                className="rounded border border-[#1e1e2e] bg-[#0d0d14] animate-pulse flex-shrink-0"
-                style={{ width: 280, height: 200 }}
-              />
+          <div className="w-full md:w-[280px] md:flex-shrink-0">
+            {mapReady
+              ? <InsightMiniMap
+                  circuit={circuit}
+                  lapRows={lapRows}
+                  channels={channels}
+                  lapColorMap={lapColorMap}
+                  distanceM={insight.distance_m_start ?? 0}
+                  distanceMStart={insight.distance_m_start ?? undefined}
+                  distanceMEnd={insight.distance_m_end ?? undefined}
+                  width={280}
+                  height={200}
+                  fullWidth
+                />
+              : <div
+                  className="rounded border border-[#1e1e2e] bg-[#0d0d14] animate-pulse w-full"
+                  style={{ height: 200 }}
+                />
+            }
+          </div>
         )}
       </div>
     </Card>
@@ -1016,7 +1058,7 @@ export function SessionDetailPage() {
     <div className="min-h-screen bg-[#0a0a0f] flex flex-col">
       {/* Header */}
       <header className="border-b border-[#1e1e2e] bg-[#12121a] flex-shrink-0">
-        <div className="max-w-screen-xl mx-auto px-6 h-14 flex items-center gap-4">
+        <div className="max-w-screen-xl mx-auto px-4 md:px-6 h-14 flex items-center gap-4">
           <button
             onClick={() => navigate({ to: '/' })}
             className="text-[#6b7280] hover:text-white transition-colors"

@@ -198,7 +198,7 @@ function EventFormModal({ initial, onClose, onSave, saving }: EventFormModalProp
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#12121a] border border-[#1e1e2e] rounded-xl w-full max-w-md p-6 shadow-2xl">
+      <div className="bg-[#12121a] border border-[#1e1e2e] rounded-xl w-full max-w-md mx-4 p-6 shadow-2xl">
         <h3 className="text-sm font-semibold text-white mb-5">
           {initial ? 'Edit Event' : 'New Event'}
         </h3>
@@ -285,7 +285,7 @@ function SessionPickerModal({ event, allSessions, onClose, onSave, saving }: Ses
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#12121a] border border-[#1e1e2e] rounded-xl w-full max-w-md p-6 shadow-2xl flex flex-col max-h-[80vh]">
+      <div className="bg-[#12121a] border border-[#1e1e2e] rounded-xl w-full max-w-md mx-4 p-6 shadow-2xl flex flex-col max-h-[80vh]">
         <h3 className="text-sm font-semibold text-white mb-1">Manage Sessions</h3>
         <p className="text-xs text-[#6b7280] mb-4">Select sessions to include in <span className="text-white">{event.name}</span></p>
 
@@ -349,7 +349,8 @@ function EventBlock({ event, sessions, allSessions, onDelete, onEdit, onDeleteEv
   return (
     <div className="border border-[#1e1e2e] rounded-xl overflow-hidden">
       {/* Event header */}
-      <div className="bg-[#16162a] px-5 py-3 flex items-center gap-3">
+      <div className="bg-[#16162a] px-4 py-3 flex flex-wrap items-center gap-y-2 gap-x-3">
+        {/* Left: chevron + name + meta */}
         <button
           onClick={() => setExpanded((v) => !v)}
           className="flex items-center gap-2 flex-1 min-w-0 text-left group"
@@ -362,51 +363,65 @@ function EventBlock({ event, sessions, allSessions, onDelete, onEdit, onDeleteEv
           </svg>
           <span className="text-sm font-semibold text-white truncate group-hover:text-white">{event.name}</span>
           {event.event_date && (
-            <span className="text-xs text-[#6b7280] flex-shrink-0">{formatSessionDate(event.event_date)}</span>
+            <span className="text-xs text-[#6b7280] flex-shrink-0 hidden sm:inline">{formatSessionDate(event.event_date)}</span>
           )}
           {event.circuit_name && (
-            <span className="text-xs text-[#4b5563] flex-shrink-0">· {event.circuit_name}</span>
+            <span className="text-xs text-[#4b5563] flex-shrink-0 hidden sm:inline">· {event.circuit_name}</span>
           )}
         </button>
-        <span className="text-xs text-[#4b5563] flex-shrink-0">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
-        <div className="flex items-center gap-1 border-l border-[#1e1e2e] pl-3 ml-1">
-          <button
-            onClick={() => onManageSessions(event)}
-            className="text-xs text-[#6b7280] hover:text-white px-2 py-1 rounded transition-colors"
-          >
-            Sessions
-          </button>
-          <button
-            onClick={() => onEdit(event)}
-            className="text-xs text-[#6b7280] hover:text-white px-2 py-1 rounded transition-colors"
-          >
-            Edit
-          </button>
-          {confirmingDelete ? (
-            <>
-              <span className="text-xs text-[#ff5252]">Delete event?</span>
-              <button
-                onClick={() => setConfirmingDelete(false)}
-                className="text-xs text-[#6b7280] hover:text-white px-2 py-1 rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => onDeleteEvent(event.id)}
-                className="text-xs text-[#ff5252] hover:text-white px-2 py-1 rounded transition-colors"
-              >
-                Confirm
-              </button>
-            </>
-          ) : (
+        {/* Right: count + actions */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <span className="text-xs text-[#4b5563] mr-1">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
+          <div className="flex items-center gap-1 border-l border-[#1e1e2e] pl-2">
             <button
-              onClick={() => setConfirmingDelete(true)}
-              className="text-xs text-[#6b7280] hover:text-[#ff5252] px-2 py-1 rounded transition-colors"
+              onClick={() => onManageSessions(event)}
+              className="text-xs text-[#6b7280] hover:text-white px-2 py-1 rounded transition-colors"
             >
-              Delete
+              Sessions
             </button>
-          )}
+            <button
+              onClick={() => onEdit(event)}
+              className="text-xs text-[#6b7280] hover:text-white px-2 py-1 rounded transition-colors"
+            >
+              Edit
+            </button>
+            {confirmingDelete ? (
+              <>
+                <span className="text-xs text-[#ff5252]">Delete?</span>
+                <button
+                  onClick={() => setConfirmingDelete(false)}
+                  className="text-xs text-[#6b7280] hover:text-white px-2 py-1 rounded transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => onDeleteEvent(event.id)}
+                  className="text-xs text-[#ff5252] hover:text-white px-2 py-1 rounded transition-colors"
+                >
+                  Confirm
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setConfirmingDelete(true)}
+                className="text-xs text-[#6b7280] hover:text-[#ff5252] px-2 py-1 rounded transition-colors"
+              >
+                Delete
+              </button>
+            )}
+          </div>
         </div>
+        {/* Mobile-only: date + circuit on second line */}
+        {(event.event_date || event.circuit_name) && (
+          <div className="w-full flex items-center gap-2 pl-5 sm:hidden">
+            {event.event_date && (
+              <span className="text-xs text-[#6b7280]">{formatSessionDate(event.event_date)}</span>
+            )}
+            {event.circuit_name && (
+              <span className="text-xs text-[#4b5563]">· {event.circuit_name}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Sessions grid */}
@@ -548,9 +563,9 @@ export function DashboardPage() {
         ] : undefined}
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-4 md:px-6 py-8">
         {/* Page header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
           <div>
             <h2 className="text-2xl font-bold text-white">Sessions</h2>
             <p className="text-sm text-[#6b7280] mt-1">
