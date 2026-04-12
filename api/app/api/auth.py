@@ -44,9 +44,42 @@ async def _issue_token_pair(user_id: str, role: str, db: asyncpg.Connection) -> 
     )
 
 
+@router.get("/beta-status")
+async def beta_status() -> dict:
+    """Return whether beta mode is active (public endpoint)."""
+    return {"beta_mode": settings.beta_mode}
+
+
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest, db=Depends(get_db)) -> TokenResponse:
     """Create a new user account and return a token pair."""
+    # Beta mode: require a valid, unused invite code
+    invite_row = None
+    if settings.beta_mode:
+        if not body.invite_code:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="beta_mode: an invite code is required to register",
+            )
+        invite_row = await db.fetchrow(
+            """
+            SELECT id, email FROM invite_codes
+            WHERE code = $1 AND used_at IS NULL
+            """,
+            body.invite_code,
+        )
+        if invite_row is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or already-used invite code",
+            )
+        # If the code was locked to a specific email, enforce it
+        if invite_row["email"] and invite_row["email"].lower() != body.email.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This invite code is not valid for that email address",
+            )
+
     # Check for existing email
     existing = await db.fetchval(
         "SELECT id FROM users WHERE email = $1",
@@ -70,6 +103,14 @@ async def register(body: RegisterRequest, db=Depends(get_db)) -> TokenResponse:
         password_hash,
         body.display_name,
     )
+
+    # Mark invite as used
+    if invite_row is not None:
+        await db.execute(
+            "UPDATE invite_codes SET used_at = now(), used_by = $1 WHERE id = $2",
+            row["id"],
+            invite_row["id"],
+        )
 
     return await _issue_token_pair(str(row["id"]), row["role"], db)
 

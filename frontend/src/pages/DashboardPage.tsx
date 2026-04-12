@@ -544,6 +544,7 @@ export function DashboardPage() {
         navItems={user?.role === 'admin' ? [
           { label: 'Circuits', to: '/admin/circuits' },
           { label: 'Users', to: '/admin/users' },
+          { label: 'Platform', to: '/admin/platform' },
         ] : undefined}
       />
 

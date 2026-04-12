@@ -216,6 +216,48 @@ services:
         condition: service_healthy
 
   # ---------------------------------------------------------------------------
+  # Track data export/import helpers (run manually, not started by default)
+  # Usage:
+  #   docker compose run --rm export-tracks
+  #   docker compose run --rm import-tracks
+  # ---------------------------------------------------------------------------
+  export-tracks:
+    build: ./api
+    profiles: ["tools"]
+    command: python /app/scripts/export_tracks.py
+    environment:
+      <<: *common-env
+      DB_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - ./data:/data
+      - ./api/scripts:/app/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - default
+
+  import-tracks:
+    build: ./api
+    profiles: ["tools"]
+    command: python /app/scripts/import_tracks.py
+    environment:
+      <<: *common-env
+      DB_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - ./data:/data
+      - ./api/scripts:/app/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - default
+
+  # ---------------------------------------------------------------------------
   # Nginx reverse proxy
   # ---------------------------------------------------------------------------
   nginx:

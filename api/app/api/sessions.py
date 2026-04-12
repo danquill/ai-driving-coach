@@ -19,7 +19,7 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
-_ALLOWED_EXTENSIONS = {".vbo", ".csv", ".drk", ".xdrk", ".ld"}
+_ALLOWED_EXTENSIONS = {".vbo", ".csv", ".apexsession", ".drk", ".xdrk", ".ld"}
 _MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024  # 500 MB
 
 
@@ -244,6 +244,7 @@ async def upload_file(
     format_map = {
         ".vbo": "vbo",
         ".csv": "csv",
+        ".apexsession": "apexsession",
         ".drk": "drk",
         ".xdrk": "xdrk",
         ".ld": "ld",

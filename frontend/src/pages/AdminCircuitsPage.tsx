@@ -1031,7 +1031,10 @@ export function AdminCircuitsPage() {
       )}
       <AppHeader
         subtitle="Circuit Editor"
-        navItems={[{ label: 'Users', to: '/admin/users' }]}
+        navItems={[
+          { label: 'Users', to: '/admin/users' },
+          { label: 'Platform', to: '/admin/platform' },
+        ]}
         rightAction={{ label: 'Dashboard', onClick: () => navigate({ to: '/' }) }}
       />
 

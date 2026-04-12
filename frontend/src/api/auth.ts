@@ -17,12 +17,14 @@ export async function login(email: string, password: string): Promise<TokenRespo
 export async function register(
   email: string,
   password: string,
-  displayName: string
+  displayName: string,
+  inviteCode?: string,
 ): Promise<TokenResponse> {
   const response = await client.post<TokenResponse>('/auth/register', {
     email,
     password,
     display_name: displayName,
+    ...(inviteCode ? { invite_code: inviteCode } : {}),
   })
   const tokens = response.data
   localStorage.setItem('access_token', tokens.access_token)

@@ -11,6 +11,7 @@ import { NewSessionPage } from './pages/NewSessionPage'
 import { SessionDetailPage } from './pages/SessionDetailPage'
 import { AdminCircuitsPage } from './pages/AdminCircuitsPage'
 import { AdminUsersPage } from './pages/AdminUsersPage'
+import { AdminPlatformPage } from './pages/AdminPlatformPage'
 import { ProfilePage } from './pages/ProfilePage'
 
 // ─── Root route ───────────────────────────────────────────────────────────────
@@ -63,6 +64,12 @@ const adminUsersRoute = createRoute({
   component: AdminUsersPage,
 })
 
+const adminPlatformRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/admin/platform',
+  component: AdminPlatformPage,
+})
+
 const profileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/profile',
@@ -79,6 +86,7 @@ const routeTree = rootRoute.addChildren([
   sessionDetailRoute,
   adminCircuitsRoute,
   adminUsersRoute,
+  adminPlatformRoute,
   profileRoute,
 ])
 

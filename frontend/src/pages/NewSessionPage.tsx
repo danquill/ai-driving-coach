@@ -188,14 +188,14 @@ export function NewSessionPage() {
     e.preventDefault()
     setDragOver(false)
     const dropped = Array.from(e.dataTransfer.files).filter((f) =>
-      /\.(vbo|csv|ld|drk|xdrk)$/i.test(f.name)
+      /\.(vbo|csv|apexsession|ld|drk|xdrk)$/i.test(f.name)
     )
     setFiles((prev) => [...prev, ...dropped])
   }
 
   function handleFileInput(e: ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files ?? []).filter((f) =>
-      /\.(vbo|csv|ld|drk|xdrk)$/i.test(f.name)
+      /\.(vbo|csv|apexsession|ld|drk|xdrk)$/i.test(f.name)
     )
     setFiles((prev) => [...prev, ...selected])
   }
@@ -344,7 +344,7 @@ export function NewSessionPage() {
             <>
               <CardHeader>
                 <h2 className="text-base font-semibold text-white">Upload Telemetry File</h2>
-                <span className="text-xs text-[#6b7280]">.vbo .csv .ld .drk .xdrk</span>
+                <span className="text-xs text-[#6b7280]">.vbo .csv .apexSession .ld .drk .xdrk</span>
               </CardHeader>
               <CardBody className="space-y-5">
                 {/* Dropzone */}
@@ -362,7 +362,7 @@ export function NewSessionPage() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".vbo,.csv,.ld,.drk,.xdrk"
+                    accept=".vbo,.csv,.apexSession,.ld,.drk,.xdrk"
                     multiple
                     onChange={handleFileInput}
                     className="hidden"
@@ -377,7 +377,7 @@ export function NewSessionPage() {
                       d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                   </svg>
                   <p className="text-sm font-medium text-white">Drop files here or click to browse</p>
-                  <p className="text-xs text-[#6b7280] mt-1">Supports .vbo, .csv, .ld, .drk, .xdrk</p>
+                  <p className="text-xs text-[#6b7280] mt-1">Supports .vbo, .csv, .apexSession, .ld, .drk, .xdrk</p>
                 </div>
 
                 {/* File list */}

@@ -1,29 +1,40 @@
-import { useState, FormEvent } from 'react'
+import { useState, useEffect, FormEvent } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { register } from '../api/auth'
+import client from '../api/client'
 import { Button } from '../components/ui/Button'
 
 export function RegisterPage() {
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
+  const [betaMode, setBetaMode] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    client.get<{ beta_mode: boolean }>('/auth/beta-status').then((r) => {
+      setBetaMode(r.data.beta_mode)
+    }).catch(() => {/* ignore — default false */})
+  }, [])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
     setLoading(true)
     try {
-      await register(email, password, displayName)
+      await register(email, password, displayName, betaMode ? inviteCode : undefined)
       navigate({ to: '/' })
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
       const msg = Array.isArray(detail)
         ? (detail as { msg?: string }[]).map(e => e.msg ?? String(e)).join(', ')
         : typeof detail === 'string'
-          ? detail
+          ? detail.startsWith('beta_mode:')
+            ? 'Registration is invite-only. Please enter your invite code.'
+            : detail
           : 'Registration failed. Please try again.'
       setError(msg)
     } finally {
@@ -52,9 +63,39 @@ export function RegisterPage() {
         </div>
 
         <div className="bg-gradient-to-b from-[#16162a] to-[#12121a] border border-[#1e1e2e] rounded-xl p-8 shadow-2xl shadow-black/50">
-          <h2 className="text-lg font-semibold text-white mb-6">Create Account</h2>
+          <div className="flex items-center gap-2 mb-6">
+            <h2 className="text-lg font-semibold text-white">Create Account</h2>
+            {betaMode && (
+              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-[#e63946]/20 text-[#e63946] border border-[#e63946]/30">
+                Beta
+              </span>
+            )}
+          </div>
+
+          {betaMode && (
+            <div className="mb-4 px-3 py-2.5 rounded-md bg-[#457b9d]/10 border border-[#457b9d]/30 text-xs text-[#9ca3af]">
+              This is an invite-only beta. Enter the invite code you received to create an account.
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {betaMode && (
+              <div>
+                <label className="block text-xs font-medium text-[#9ca3af] mb-1.5 uppercase tracking-wide">
+                  Invite Code
+                </label>
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  required
+                  autoComplete="off"
+                  placeholder="xxxxxxxxxxxxxxxxxxxx"
+                  className="w-full bg-[#0a0a0f] border border-[#457b9d]/50 rounded-md px-3 py-2.5 text-sm text-white placeholder-[#374151] focus:outline-none focus:border-[#457b9d] focus:ring-1 focus:ring-[#457b9d] transition-colors font-mono"
+                />
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-medium text-[#9ca3af] mb-1.5 uppercase tracking-wide">
                 Display Name

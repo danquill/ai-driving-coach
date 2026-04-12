@@ -117,7 +117,10 @@ export function AdminUsersPage() {
     <div className="min-h-screen bg-[#0a0a0f]">
       <AppHeader
         subtitle="User Management"
-        navItems={[{ label: 'Circuits', to: '/admin/circuits' }]}
+        navItems={[
+          { label: 'Circuits', to: '/admin/circuits' },
+          { label: 'Platform', to: '/admin/platform' },
+        ]}
         rightAction={{ label: 'Dashboard', onClick: () => navigate({ to: '/' }) }}
       />
 
