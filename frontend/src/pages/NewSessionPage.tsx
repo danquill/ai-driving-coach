@@ -216,8 +216,7 @@ export function NewSessionPage() {
       }
       setStep('processing')
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      setUploadError(msg)
+      setUploadError('Upload failed. Please check your file and try again.')
       console.error('Upload error:', err)
     } finally {
       setUploading(false)

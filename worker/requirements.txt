@@ -15,7 +15,7 @@ psycopg2-binary==2.9.10
 minio==7.2.11
 
 # AI / LLM (workers invoke Anthropic for coaching insights)
-anthropic==0.40.0
+anthropic>=0.50.0
 
 # Data validation / serialization
 pydantic==2.10.3

@@ -89,8 +89,9 @@ _COACHING_SYSTEM_PROMPT = (
     "only the number (e.g. 'On Lap 5, at T8...').\n"
     "- Set distance_m_start and distance_m_end from the 'Analysis window' field in the corner data. "
     "These values are always present — use them directly as numbers. "
-    "Do NOT write any disclaimer about distances in insight_text. "
-    "Do NOT write 'UNKNOWN', 'not provided', or 'Analysis window' anywhere in insight_text.\n"
+    "NEVER write <UNKNOWN>, 'UNKNOWN', 'not provided', null, or any placeholder for these fields — "
+    "copy the exact numbers from 'Analysis window: X–Y m'. "
+    "Do NOT write any disclaimer about distances in insight_text.\n"
     "- For each finding, your feedback must follow this structure:\n"
     "  1. Where: reference the corner name and distance marker\n"
     "  2. What: describe what the telemetry shows is happening, contrasted against "
@@ -317,20 +318,34 @@ class ClaudeClient:
             logger.error("claude_client_no_tool_use_block", content=str(response.content))
             raise ValueError("Claude did not return a record_coaching_insights tool use block")
 
-        raw_insights = tool_use_block.input.get("insights", [])
-        logger.debug(
-            "claude_client_raw_insights_type",
-            input_type=type(tool_use_block.input).__name__,
-            insights_type=type(raw_insights).__name__,
-            insights_repr=repr(raw_insights)[:200],
-        )
-        if isinstance(raw_insights, str):
-            import json as _json
+        import json as _json
+        # tool_use_block.input is the parsed dict from the SDK.
+        # In some SDK versions the "insights" value arrives as a JSON-encoded string
+        # rather than a native list — parse it if necessary.
+        tool_input = tool_use_block.input
+        if isinstance(tool_input, str):
             try:
-                raw_insights = _json.loads(raw_insights)
+                tool_input = _json.loads(tool_input)
             except Exception:
-                logger.error("claude_client_insights_json_parse_failed", raw=raw_insights[:200])
-                raw_insights = []
+                tool_input = {}
+
+        raw_insights = tool_input.get("insights", [])
+        if isinstance(raw_insights, str):
+            # Claude sometimes writes <UNKNOWN> for missing numeric fields — replace with null
+            import re as _re
+            cleaned = _re.sub(r':\s*<[^>]+>', ': null', raw_insights)
+            try:
+                raw_insights = _json.loads(cleaned)
+            except Exception as exc:
+                # Attempt to salvage complete objects before any truncation point
+                try:
+                    salvaged = _json.loads(cleaned[:cleaned.rfind("},")+1] + "]")
+                    raw_insights = salvaged
+                    logger.warning("claude_client_insights_json_salvaged", count=len(raw_insights))
+                except Exception:
+                    logger.error("claude_client_insights_json_parse_failed", raw=raw_insights[:500], error=str(exc))
+                    raw_insights = []
+
         insights: list[dict] = [i for i in raw_insights if isinstance(i, dict)]
         if len(insights) < len(raw_insights):
             logger.warning(

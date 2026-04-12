@@ -2,7 +2,7 @@ import client from './client'
 import type { Circuit, CircuitCorner, CircuitCornerKnowledge, CircuitSector } from '../types/api'
 
 export async function listCircuits(): Promise<Circuit[]> {
-  const response = await client.get<Circuit[]>('/circuits')
+  const response = await client.get<Circuit[]>('/circuits/')
   return response.data
 }
 

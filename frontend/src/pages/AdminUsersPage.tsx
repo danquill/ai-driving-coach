@@ -188,9 +188,7 @@ export function AdminUsersPage() {
         </div>
 
         {updateMutation.isError && (
-          <p className="mt-3 text-xs text-[#ff5252]">
-            {(updateMutation.error as Error)?.message ?? 'Failed to update user.'}
-          </p>
+          <p className="mt-3 text-xs text-[#ff5252]">Failed to update user. Please try again.</p>
         )}
       </main>
     </div>

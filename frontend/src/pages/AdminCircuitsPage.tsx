@@ -182,9 +182,7 @@ function GeometryImportPanel({ circuitId, onImported }: { circuitId: string; onI
           </div>
 
           {importMutation.isError && (
-            <p className="text-xs text-[#ff5252]">
-              {(importMutation.error as Error).message ?? 'Import failed'}
-            </p>
+            <p className="text-xs text-[#ff5252]">Import failed. Please try again.</p>
           )}
 
           <div className="flex justify-end gap-2">

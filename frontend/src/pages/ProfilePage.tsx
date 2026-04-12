@@ -96,8 +96,8 @@ export function ProfilePage() {
       setConfirmPassword('')
       setPasswordError('')
     },
-    onError: (err: Error) => {
-      setPasswordError(err.message ?? 'Update failed.')
+    onError: () => {
+      setPasswordError('Password update failed. Please check your current password and try again.')
     },
   })
 
@@ -186,7 +186,7 @@ export function ProfilePage() {
                 />
               </div>
               {updateMutation.isError && (
-                <p className="text-xs text-[#ff5252]">{(updateMutation.error as Error)?.message ?? 'Update failed.'}</p>
+                <p className="text-xs text-[#ff5252]">Failed to update profile. Please try again.</p>
               )}
               <div className="flex gap-2">
                 <Button variant="primary" size="sm" type="submit" disabled={!displayName.trim() || updateMutation.isPending}>

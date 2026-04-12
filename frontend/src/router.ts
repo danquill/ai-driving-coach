@@ -2,6 +2,7 @@ import {
   createRouter,
   createRootRoute,
   createRoute,
+  redirect,
   Outlet,
 } from '@tanstack/react-router'
 import { LoginPage } from './pages/LoginPage'
@@ -34,45 +35,58 @@ const registerRoute = createRoute({
   component: RegisterPage,
 })
 
+function requireAuth() {
+  if (!localStorage.getItem('access_token')) {
+    throw redirect({ to: '/login' })
+  }
+}
+
 const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
+  beforeLoad: requireAuth,
   component: DashboardPage,
 })
 
 const newSessionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/sessions/new',
+  beforeLoad: requireAuth,
   component: NewSessionPage,
 })
 
 const sessionDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/sessions/$sessionId',
+  beforeLoad: requireAuth,
   component: SessionDetailPage,
 })
 
 const adminCircuitsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/admin/circuits',
+  beforeLoad: requireAuth,
   component: AdminCircuitsPage,
 })
 
 const adminUsersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/admin/users',
+  beforeLoad: requireAuth,
   component: AdminUsersPage,
 })
 
 const adminPlatformRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/admin/platform',
+  beforeLoad: requireAuth,
   component: AdminPlatformPage,
 })
 
 const profileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/profile',
+  beforeLoad: requireAuth,
   component: ProfilePage,
 })
 

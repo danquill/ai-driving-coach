@@ -245,10 +245,11 @@ function InvitesPanel() {
         )}
       </div>
 
-      {(createMutation.isError || deleteMutation.isError) && (
-        <p className="text-xs text-[#ff5252]">
-          {((createMutation.error ?? deleteMutation.error) as Error)?.message ?? 'An error occurred.'}
-        </p>
+      {createMutation.isError && (
+        <p className="text-xs text-[#ff5252]">Failed to generate invite code. Please try again.</p>
+      )}
+      {deleteMutation.isError && (
+        <p className="text-xs text-[#ff5252]">Failed to delete invite code. Please try again.</p>
       )}
     </div>
   )

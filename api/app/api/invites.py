@@ -45,7 +45,7 @@ async def create_invite(
         """,
         code,
         body.email,
-        uuid.UUID(current_user["id"]),
+        current_user["id"],
     )
     return InviteResponse(
         id=row["id"],

@@ -354,6 +354,30 @@ def classify_corners(
         if driver_speed_mph is not None and ideal_speed_mph is not None:
             speed_delta_mph = round(driver_speed_mph - ideal_speed_mph, 1)
 
+        # --- Focus window (needed to constrain braking zone to this corner only) ---
+        _focus_start: float | None = None
+        _focus_end: float | None = None
+        if corner_distance_m is not None:
+            if phase in ("entry", "turn-in"):
+                _focus_start = max(0, corner_distance_m - 100)
+                _focus_end = corner_distance_m + 50
+            elif phase == "mid-corner":
+                _focus_start = max(0, corner_distance_m - 30)
+                _focus_end = corner_distance_m + 80
+            else:
+                _focus_start = max(0, corner_distance_m - 10)
+                _focus_end = corner_distance_m + 120
+
+        # Filter braking zone to this corner's focus window so that braking events
+        # belonging to adjacent corners (e.g. T5 braking appearing in T4's sector)
+        # are excluded from the brake trace analysis.
+        if _focus_start is not None and _focus_end is not None:
+            braking_zone = [
+                p for p in braking_zone
+                if p.get("distance_m") is not None
+                and _focus_start <= p["distance_m"] <= _focus_end
+            ]
+
         # --- Brake trace ---
         brake_description = "zero"
         peak_brake = 0.0

@@ -16,12 +16,12 @@ export interface UpdateEventData {
 }
 
 export async function listEvents(): Promise<Event[]> {
-  const response = await client.get<Event[]>('/events')
+  const response = await client.get<Event[]>('/events/')
   return response.data
 }
 
 export async function createEvent(data: CreateEventData): Promise<Event> {
-  const response = await client.post<Event>('/events', data)
+  const response = await client.post<Event>('/events/', data)
   return response.data
 }
 

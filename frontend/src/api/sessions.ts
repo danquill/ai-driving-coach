@@ -10,7 +10,7 @@ export interface CreateSessionData {
 }
 
 export async function listSessions(): Promise<Session[]> {
-  const response = await client.get<Session[]>('/sessions')
+  const response = await client.get<Session[]>('/sessions/')
   return response.data
 }
 
@@ -25,7 +25,7 @@ export async function getDemoSession(): Promise<Session> {
 }
 
 export async function createSession(data: CreateSessionData): Promise<Session> {
-  const response = await client.post<Session>('/sessions', data)
+  const response = await client.post<Session>('/sessions/', data)
   return response.data
 }
 

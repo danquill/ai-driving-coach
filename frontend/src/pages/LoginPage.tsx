@@ -457,9 +457,7 @@ export function LoginPage() {
           </div>
         </div>
 
-        <p className="text-center text-xs text-[#374151] mt-6">
-          Professional telemetry analysis platform
-        </p>
+
       </div>
     </div>
   )

@@ -13,6 +13,8 @@ x-common-env: &common-env
   MINIO_ENDPOINT: minio:9000
   MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-trackminio}
   MINIO_SECURE: "false"
+  BETA_MODE: ${BETA_MODE:-false}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
 
 services:
   # ---------------------------------------------------------------------------
