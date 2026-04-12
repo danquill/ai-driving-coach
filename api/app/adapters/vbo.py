@@ -51,6 +51,7 @@ _SYNONYMS: dict[str, str] = {
     "latacc-calc": "lat_g",
     "latacc-calc g": "lat_g",
     "lateral_acc": "lat_g",
+    "latacc": "lat_g",
     # longitudinal G
     "longitudinal-g": "lon_g",
     "long-g": "lon_g",
@@ -60,18 +61,21 @@ _SYNONYMS: dict[str, str] = {
     "longitudinal_acc": "lon_g",
     "long accel g": "lon_g",
     "lat accel g": "lat_g",
+    "longacc": "lon_g",
     # throttle
     "throttle": "throttle_pct",
     "throttle pos": "throttle_pct",
     "throttle_pos": "throttle_pct",
     "throttle_pos-obd": "throttle_pct",
     "throttle pos-obd": "throttle_pct",
+    "throttleposition(%)": "throttle_pct",
     # brake
     "brake": "brake_pct",
     "brake pos": "brake_pct",
     "brake_pos": "brake_pct",
     "brake_pos-obd": "brake_pct",
     "brake pos-obd": "brake_pct",
+    "brake(calc)": "brake_pct",
     # steering
     "steer angle": "steering_deg",
     "steering angle": "steering_deg",
@@ -81,6 +85,9 @@ _SYNONYMS: dict[str, str] = {
     "rpm": "rpm",
     "engine rpm": "rpm",
     "rpm-obd": "rpm",
+    "enginespeed(rpm)": "rpm",
+    # vehicle speed in mph (TrackAddict OBD) — stored separately, converted below
+    "vehiclespeed(mph)": "speed_mph",
     # hdop / accuracy
     "hdop": "hdop",
     "accuracy": "hdop",
@@ -247,7 +254,7 @@ class VBOAdapter(TelemetryAdapter):
             canon = _canonical(raw)
             if canon and canon not in col_index:
                 col_index[canon] = i
-            # secondary speed fallback
+            # secondary speed fallbacks
             if canon == "speed_obd_kph" and "speed_kph" not in col_index:
                 col_index["speed_kph"] = i
 

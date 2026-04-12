@@ -47,15 +47,17 @@ export function InsightMiniMap({
 
     const container = containerRef.current
 
-    const map = new maplibregl.Map({
+    const mapOptions = {
       container,
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      center: [0, 51.5],
+      center: [0, 51.5] as [number, number],
       zoom: 14,
       attributionControl: false,
       interactive: false,
       preserveDrawingBuffer: true,
-    })
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const map = new maplibregl.Map(mapOptions as any)
 
     let removed = false
 

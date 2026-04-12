@@ -41,6 +41,48 @@ _CSV_SYNONYMS: dict[str, str] = {
     "lean_angle": "_skip",
     "fix_type": "_skip",
     "device_update_rate": "_skip",
+    # AiM / Solo2 style — units embedded in column name
+    "time (s)": "time_s",
+    "distance (m)": "distance_m_col",
+    "lap #": "lap_number_col",
+    "lat (deg)": "lat",
+    "lon (deg)": "lon",
+    "speed (m/s)": "speed_kph",   # m/s — converted below
+    "speed (kph)": "speed_kph",
+    "height (m)": "altitude_m",
+    "heading (deg)": "heading_deg",
+    "rpm (1/min)": "rpm",
+    "tps (%)": "throttle_pct",
+    "ax (g)": "lon_g",
+    "ay (g)": "lat_g",
+    "az (g)": "_skip",
+    "gz (deg/s)": "_skip",
+    "fixtype": "_skip",
+    "apex score": "_skip",
+    # TrackAddict / RaceRender style
+    "time": "time_s",
+    "utc time": "time_s",
+    "lap": "lap_number_col",
+    "sector": "_skip",
+    "predicted lap time": "_skip",
+    "predicted vs best lap": "_skip",
+    "gps_update": "_skip",
+    "gps_delay": "_skip",
+    "altitude (ft)": "_skip",
+    "speed (mph)": "speed_mph",   # MPH — converted below
+    "heading": "heading_deg",
+    "accuracy (m)": "hdop",
+    "accel x": "lon_g",
+    "accel y": "lat_g",
+    "accel z": "_skip",
+    "brake (calculated)": "brake_pct",
+    "obd_update": "_skip",
+    "engine speed (rpm) *obd": "rpm",
+    "vehicle speed (mph) *obd": "_skip",
+    "throttle position (%) *obd": "throttle_pct",
+    "engine coolant temp (f) *obd": "_skip",
+    "intake air temp (f) *obd": "_skip",
+    "intake manifold pressure (psi) *obd": "_skip",
 }
 
 
@@ -56,16 +98,24 @@ def _match_header(raw: str) -> str | None:
 def _find_header_row(lines: list[str]) -> int:
     """
     Return the index of the line that contains the actual column headers.
-    RaceChrono CSVs have several metadata lines before the header row.
-    We detect the header row as the first line that contains 'latitude' or 'lat'
-    as a comma-separated token (case-insensitive).
+    Handles RaceChrono (metadata preamble), AiM/Solo2 (units in names),
+    and TrackAddict/RaceRender (# comment preamble, quoted headers).
     """
     for i, line in enumerate(lines):
-        lower = line.lower()
+        # Skip comment lines (TrackAddict uses # prefix)
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        lower = stripped.lower()
         if "latitude" in lower or ",lat," in lower or lower.startswith("lat,"):
             return i
-        # Also accept 'timestamp' as a known-good header indicator
         if lower.startswith("timestamp,"):
+            return i
+        # AiM/Solo2: header contains "lat (deg)" or "lon (deg)"
+        if "lat (deg)" in lower or "lon (deg)" in lower:
+            return i
+        # TrackAddict: quoted header contains "latitude" and "longitude"
+        if '"latitude"' in lower and '"longitude"' in lower:
             return i
     return 0  # fallback: assume first line
 
@@ -166,14 +216,18 @@ class CSVAdapter(TelemetryAdapter):
             if canon and canon not in col_map and canon != "_skip":
                 col_map[canon] = raw_header
 
-        # Detect if speed column is in m/s (RaceChrono) vs kph
-        # RaceChrono CSV header has a units row we already skipped,
-        # but we can check the units line if present
+        # Detect if speed column is in m/s (RaceChrono units row, or AiM inline header)
         speed_is_ms = False
-        if header_idx + 1 < len(lines):
+        header_lower = lines[header_idx].lower()
+        if "speed (m/s)" in header_lower:
+            speed_is_ms = True
+        elif header_idx + 1 < len(lines):
             units_line = lines[header_idx + 1].lower()
             if "m/s" in units_line:
                 speed_is_ms = True
+
+        # Detect if speed column is in mph (TrackAddict/RaceRender)
+        speed_is_mph = "speed_mph" in col_map
 
         prev_lat: float | None = None
         prev_lon: float | None = None
@@ -183,7 +237,8 @@ class CSVAdapter(TelemetryAdapter):
         for row in reader:
             def _get(field: str) -> str:
                 hdr = col_map.get(field)
-                return row.get(hdr, "").strip() if hdr else ""
+                val = row.get(hdr) if hdr else None
+                return (val or "").strip()
 
             def _float(field: str, default: float | None = None) -> float | None:
                 v = _get(field)
@@ -229,9 +284,13 @@ class CSVAdapter(TelemetryAdapter):
                     cumulative_distance_m += haversine_m(prev_lat, prev_lon, lat, lon)
             prev_lat, prev_lon = lat, lon
 
-            # Speed: RaceChrono stores in m/s, convert to kph
-            speed_raw = _float("speed_kph", 0.0) or 0.0
-            speed_kph = speed_raw * 3.6 if speed_is_ms else speed_raw
+            # Speed: normalise to kph
+            if speed_is_mph:
+                speed_raw = _float("speed_mph", 0.0) or 0.0
+                speed_kph = speed_raw * 1.60934
+            else:
+                speed_raw = _float("speed_kph", 0.0) or 0.0
+                speed_kph = speed_raw * 3.6 if speed_is_ms else speed_raw
 
             # Wall time from epoch timestamp
             wall_time: datetime | None = None

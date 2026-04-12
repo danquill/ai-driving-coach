@@ -1,0 +1,77 @@
+# Production overrides — used with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# What this changes from the base compose:
+#   - Frontend: builds the prod Nginx image instead of running the Vite dev server
+#   - Removes all host port bindings except nginx:80 (DB, MinIO, API not exposed)
+#   - Nginx: updated config that proxies to the prod frontend on port 80
+#   - Adds cloudflared tunnel service
+#   - Sets ENVIRONMENT=production
+
+services:
+  # ---------------------------------------------------------------------------
+  # Frontend — static build served by Nginx
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: prod
+    volumes: []   # remove the dev source mount
+    ports: []     # not exposed directly — nginx proxies to it
+
+  # ---------------------------------------------------------------------------
+  # Nginx — updated config for prod (no Vite HMR, frontend on port 80)
+  # ---------------------------------------------------------------------------
+  nginx:
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+
+  # ---------------------------------------------------------------------------
+  # API — close direct host port, set production environment
+  # ---------------------------------------------------------------------------
+  api:
+    ports: []
+    environment:
+      ENVIRONMENT: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  # ---------------------------------------------------------------------------
+  # Worker — set production environment
+  # ---------------------------------------------------------------------------
+  worker:
+    environment:
+      ENVIRONMENT: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  # ---------------------------------------------------------------------------
+  # TimescaleDB — close host port (internal only)
+  # ---------------------------------------------------------------------------
+  db:
+    ports: []
+
+  # ---------------------------------------------------------------------------
+  # MinIO — close host ports (internal only)
+  # ---------------------------------------------------------------------------
+  minio:
+    ports: []
+
+  # ---------------------------------------------------------------------------
+  # Flower — close host port (accessible via /flower/ through nginx if needed)
+  # ---------------------------------------------------------------------------
+  flower:
+    ports: []
+
+  # ---------------------------------------------------------------------------
+  # Cloudflare Tunnel — outbound only, no inbound ports needed
+  # ---------------------------------------------------------------------------
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - nginx

@@ -90,8 +90,6 @@ function makeOpts(
         font: '11px monospace',
         labelFont: '11px sans-serif',
         labelGap: 8,
-        min: 0,
-        max: 100,
       },
     ],
     scales: {

@@ -89,7 +89,7 @@ def detect_laps(
                 # Check heading constraint (skip if heading unavailable)
                 if heading is not None:
                     hdiff = _heading_diff(float(heading), sf_heading)
-                    if hdiff > 45:
+                    if hdiff > 90:
                         # Wrong direction — mark as inside fence but don't trigger
                         # Don't skip: still need to fall through to exit detection below
                         pass
