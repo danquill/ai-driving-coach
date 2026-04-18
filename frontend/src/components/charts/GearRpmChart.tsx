@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import type { OverlayResponse } from '../../types/api'
-import { overlayToUPlot } from '../../utils/telemetry'
+import { overlayToUPlot, attachTouchCursor } from '../../utils/telemetry'
 import { useStore } from '../../store'
 
 interface GearRpmChartProps {
@@ -146,6 +146,7 @@ export function GearRpmChart({ overlay, selectedLaps, lapColorMap }: GearRpmChar
 
     const opts = makeOpts(width, height, selectedLaps, lapColorMap, hasGear, hasRpm, setCursorDistanceM)
     chartRef.current = new uPlot(opts, combined as uPlot.AlignedData, containerRef.current)
+    const detachTouch = attachTouchCursor(chartRef.current)
 
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0]
@@ -156,6 +157,7 @@ export function GearRpmChart({ overlay, selectedLaps, lapColorMap }: GearRpmChar
     ro.observe(containerRef.current)
 
     return () => {
+      detachTouch()
       ro.disconnect()
       chartRef.current?.destroy()
       chartRef.current = null

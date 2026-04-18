@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import type { OverlayResponse } from '../../types/api'
-import { overlayToUPlot } from '../../utils/telemetry'
+import { overlayToUPlot, attachTouchCursor } from '../../utils/telemetry'
 import { useStore } from '../../store'
 import { Spinner } from '../ui/Spinner'
 
@@ -146,6 +146,7 @@ export function ThrottleBrakeChart({ overlay, selectedLaps, lapColorMap }: Throt
       combined as uPlot.AlignedData,
       containerRef.current
     )
+    const detachTouch = attachTouchCursor(chartRef.current)
 
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0]
@@ -159,6 +160,7 @@ export function ThrottleBrakeChart({ overlay, selectedLaps, lapColorMap }: Throt
     ro.observe(containerRef.current)
 
     return () => {
+      detachTouch()
       ro.disconnect()
       chartRef.current?.destroy()
       chartRef.current = null

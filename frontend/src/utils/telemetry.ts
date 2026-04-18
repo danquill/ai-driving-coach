@@ -2,6 +2,52 @@ import chroma from 'chroma-js'
 import type { OverlayResponse } from '../types/api'
 import type uPlot from 'uplot'
 
+// ─── Touch cursor support ──────────────────────────────────────────────────────
+
+/**
+ * Attaches touch event listeners to a uPlot instance so that sliding a finger
+ * across the chart moves the cursor (and fires setCursor hooks / sync) exactly
+ * as a mouse hover would. Returns a cleanup function.
+ */
+export function attachTouchCursor(u: uPlot): () => void {
+  const canvas = u.ctx.canvas
+
+  function toMouseEvent(touch: Touch, type: string): MouseEvent {
+    return new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+    })
+  }
+
+  function onTouchStart(e: TouchEvent) {
+    if (e.touches.length !== 1) return
+    canvas.dispatchEvent(toMouseEvent(e.touches[0], 'mouseenter'))
+    canvas.dispatchEvent(toMouseEvent(e.touches[0], 'mousemove'))
+  }
+
+  function onTouchMove(e: TouchEvent) {
+    if (e.touches.length !== 1) return
+    e.preventDefault()
+    canvas.dispatchEvent(toMouseEvent(e.touches[0], 'mousemove'))
+  }
+
+  function onTouchEnd() {
+    canvas.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
+  }
+
+  canvas.addEventListener('touchstart', onTouchStart, { passive: false })
+  canvas.addEventListener('touchmove', onTouchMove, { passive: false })
+  canvas.addEventListener('touchend', onTouchEnd)
+
+  return () => {
+    canvas.removeEventListener('touchstart', onTouchStart)
+    canvas.removeEventListener('touchmove', onTouchMove)
+    canvas.removeEventListener('touchend', onTouchEnd)
+  }
+}
+
 // ─── uPlot data transformation ────────────────────────────────────────────────
 
 /**

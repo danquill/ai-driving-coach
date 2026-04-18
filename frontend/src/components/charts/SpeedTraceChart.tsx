@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import type { OverlayResponse } from '../../types/api'
-import { overlayToUPlot } from '../../utils/telemetry'
+import { overlayToUPlot, attachTouchCursor } from '../../utils/telemetry'
 import { useStore } from '../../store'
 import { Spinner } from '../ui/Spinner'
 
@@ -102,6 +102,7 @@ export function SpeedTraceChart({ overlay, selectedLaps, lapColorMap }: SpeedTra
 
     const opts = makeOpts(width, height, selectedLaps, lapColorMap, setCursorDistanceM)
     chartRef.current = new uPlot(opts, data as uPlot.AlignedData, containerRef.current)
+    const detachTouch = attachTouchCursor(chartRef.current)
 
     // ResizeObserver
     const ro = new ResizeObserver((entries) => {
@@ -115,6 +116,7 @@ export function SpeedTraceChart({ overlay, selectedLaps, lapColorMap }: SpeedTra
     ro.observe(containerRef.current)
 
     return () => {
+      detachTouch()
       ro.disconnect()
       chartRef.current?.destroy()
       chartRef.current = null

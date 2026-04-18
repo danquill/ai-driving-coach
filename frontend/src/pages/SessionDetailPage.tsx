@@ -387,6 +387,50 @@ function AnalysisTab({ sessionId }: { sessionId: string }) {
   )
   const validLaps = (laps ?? []).filter((l) => l.is_valid)
 
+  // Compute sector distance boundaries from telemetry + circuit sector triggers
+  const sectorZooms = useMemo(() => {
+    if (!circuit?.sectors?.length || !overlay) return []
+    const channels = overlay.channels
+    const latIdx = channels.indexOf('lat')
+    const lonIdx = channels.indexOf('lon')
+    const distIdx = channels.indexOf('distance_m')
+    if (latIdx === -1 || lonIdx === -1 || distIdx === -1) return []
+
+    // Use first selected lap (same lap the chart x-axis is built from)
+    const firstLapKey = selectedLapNumbers.length > 0
+      ? String(selectedLapNumbers[0])
+      : Object.keys(overlay.laps)[0]
+    const firstLapRows = overlay.laps[firstLapKey]
+    if (!firstLapRows?.length) return []
+
+    // Charts normalize distance to start at 0 — apply same offset
+    const offset = firstLapRows[0][distIdx]
+
+    // Find normalized distance_m closest to a given lat/lon trigger
+    function findNormDist(trigLat: number, trigLon: number): number {
+      let bestDist = Infinity
+      let bestD = 0
+      for (const row of firstLapRows) {
+        const dlat = row[latIdx] - trigLat
+        const dlon = row[lonIdx] - trigLon
+        const d2 = dlat * dlat + dlon * dlon
+        if (d2 < bestDist) { bestDist = d2; bestD = row[distIdx] - offset }
+      }
+      return bestD
+    }
+
+    const sorted = [...circuit.sectors].sort((a, b) => a.sector_number - b.sector_number)
+    const trackLength = firstLapRows[firstLapRows.length - 1][distIdx] - offset
+
+    return sorted.map((sec, i) => {
+      const start = findNormDist(sec.trigger_lat, sec.trigger_lon)
+      const end = i + 1 < sorted.length
+        ? findNormDist(sorted[i + 1].trigger_lat, sorted[i + 1].trigger_lon)
+        : trackLength
+      return { label: `S${sec.sector_number}`, start, end }
+    })
+  }, [circuit, overlay, selectedLapNumbers])
+
   function toggleChart(key: ChartPanelKey) {
     setVisibleCharts((prev) => {
       const next = new Set(prev)
@@ -481,7 +525,26 @@ function AnalysisTab({ sessionId }: { sessionId: string }) {
               </svg>
               Laps {selectedLapNumbers.length > 0 && `(${selectedLapNumbers.length})`}
             </button>
-            <div className="flex-1" />
+            {/* Sector zoom buttons */}
+            {sectorZooms.length > 0 && (
+              <div className="flex items-center gap-1 flex-1 overflow-x-auto scrollbar-none">
+                {sectorZooms.map((sz) => (
+                  <button
+                    key={sz.label}
+                    onClick={() => {
+                      const s = uPlot.sync('telemetry-sync')
+                      for (const u of s.plots) {
+                        u.setScale('x', { min: sz.start, max: sz.end })
+                      }
+                    }}
+                    className="text-xs text-[#6b7280] hover:text-white border border-[#1e1e2e] hover:border-[#457b9d] hover:bg-[#457b9d]/10 px-2.5 py-1.5 md:py-1 rounded transition-colors flex-shrink-0"
+                  >
+                    {sz.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {sectorZooms.length === 0 && <div className="flex-1" />}
             <button
               onClick={() => {
                 const s = uPlot.sync('telemetry-sync')
